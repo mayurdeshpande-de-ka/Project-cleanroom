@@ -19,11 +19,49 @@ EXCEL_PATH = os.path.join(BASE_DIR, 'Form20 Backlog Tracker.xlsx')
 
 # ── DB helpers ──────────────────────────────────────────────────────────────
 
+class TursoCursorWrapper:
+    def __init__(self, result_set):
+        self.result_set = result_set
+    
+    def fetchall(self):
+        cols = self.result_set.columns
+        return [dict(zip(cols, list(r))) for r in self.result_set.rows]
+        
+    def fetchone(self):
+        if not self.result_set.rows: return None
+        cols = self.result_set.columns
+        return dict(zip(cols, list(self.result_set.rows[0])))
+
+class TursoConnectionWrapper:
+    def __init__(self, client):
+        self.client = client
+    
+    def execute(self, query, params=()):
+        result_set = self.client.execute(query, list(params))
+        return TursoCursorWrapper(result_set)
+        
+    def close(self):
+        self.client.close()
+        
+    def commit(self):
+        pass
+
 def get_db():
-    import sqlite3
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    import os
+    turso_url = os.environ.get('TURSO_DATABASE_URL')
+    turso_token = os.environ.get('TURSO_AUTH_TOKEN')
+    
+    if turso_url and turso_token:
+        import libsql_client
+        # Ensure HTTPS for robust connection
+        turso_url = turso_url.replace('libsql://', 'https://')
+        client = libsql_client.create_client_sync(url=turso_url, auth_token=turso_token)
+        return TursoConnectionWrapper(client)
+    else:
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
 
 
 # ── Routes ──────────────────────────────────────────────────────────────────
