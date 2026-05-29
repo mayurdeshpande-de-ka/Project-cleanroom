@@ -63,6 +63,44 @@ def get_db():
         conn.row_factory = sqlite3.Row
         return conn
 
+def get_rds_db():
+    import os
+    import psycopg2
+    from psycopg2.extras import DictCursor
+    
+    # Credentials from AWS RDS
+    db_host = os.environ.get('DB_HOST')
+    db_port = os.environ.get('DB_PORT', '5432')
+    db_user = os.environ.get('DB_USER')
+    db_pass = os.environ.get('DB_PASSWORD')
+    db_name = os.environ.get('DB_NAME')
+    
+    if not all([db_host, db_user, db_pass, db_name]):
+        return None
+        
+    conn = psycopg2.connect(
+        host=db_host,
+        port=db_port,
+        user=db_user,
+        password=db_pass,
+        dbname=db_name
+    )
+    conn.autocommit = True
+    return conn
+
+# Standard ECI state codes mapping
+STATE_TO_ECI = {
+    'AP': 'S01', 'AR': 'S02', 'AS': 'S03', 'BR': 'S04', 'GA': 'S05',
+    'GJ': 'S06', 'HR': 'S07', 'HP': 'S08', 'KA': 'S10', 'KL': 'S11',
+    'MP': 'S12', 'MH': 'S13', 'MN': 'S14', 'ML': 'S15', 'MZ': 'S16',
+    'NL': 'S17', 'OR': 'S18', 'PB': 'S19', 'RJ': 'S20', 'SK': 'S21',
+    'TN': 'S22', 'TR': 'S23', 'UP': 'S24', 'WB': 'S25', 'CG': 'S26',
+    'JH': 'S27', 'UK': 'S28', 'TS': 'S29',
+    'AN': 'U01', 'CH': 'U02', 'DD': 'U03', 'DN': 'U03', 'DL': 'U05',
+    'LD': 'U06', 'PY': 'U07', 'JK': 'U08', 'LA': 'U09'
+}
+
+
 
 # ── Routes ──────────────────────────────────────────────────────────────────
 
@@ -71,7 +109,7 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/api/records')
+@app.route('/api/records', methods=['GET'])
 def get_records():
     conn = get_db()
     query = 'SELECT * FROM records WHERE 1=1'
@@ -195,6 +233,57 @@ def get_filters():
         'metadata': metadata,
         'state_names': state_names
     })
+
+
+@app.route('/api/sync-rds', methods=['POST'])
+def sync_rds():
+    """Syncs the 'in_db' status from AWS RDS Postgres."""
+    rds_conn = get_rds_db()
+    if not rds_conn:
+        return jsonify({'success': False, 'message': 'AWS RDS credentials not configured'}), 400
+        
+    try:
+        # Fetch distinct state_code and eroll_publication combinations
+        with rds_conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT state_code, eroll_publication FROM public.epic_details_v2")
+            rds_data = cur.fetchall()
+            
+        # rds_data contains tuples of (state_code, eroll_publication), e.g., ('S11', '2024')
+        rds_set = set((row[0], str(row[1]).strip()) for row in rds_data if row[0] and row[1])
+        
+        turso_conn = get_db()
+        turso_records = turso_conn.execute("SELECT id, state, el_year FROM records").fetchall()
+        
+        updates = []
+        for rec in turso_records:
+            state = rec['state']
+            el_year = str(rec['el_year']).strip()
+            
+            # Translate 2-letter state code to ECI code
+            eci_code = STATE_TO_ECI.get(state)
+            
+            # If this exact combination exists in RDS, mark it as in_db
+            if eci_code and (eci_code, el_year) in rds_set:
+                updates.append(rec['id'])
+                
+        if updates:
+            # Batch update in Turso
+            placeholders = ','.join(['?'] * len(updates))
+            turso_conn.execute(f"UPDATE records SET db_status = 'in_db', overall_status = 'completed', retro_ready = 1 WHERE id IN ({placeholders})", updates)
+            
+            # Log this action
+            for rec_id in updates:
+                turso_conn.execute(
+                    "INSERT INTO activity_log (record_key, action, old_value, new_value, changed_by) VALUES (?, ?, ?, ?, ?)",
+                    [f"ID:{rec_id}", 'sync_rds', 'not_in_db', 'in_db', 'System Sync']
+                )
+                
+        return jsonify({'success': True, 'synced_count': len(updates), 'message': f'Successfully synced {len(updates)} records from AWS RDS.'})
+    
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        rds_conn.close()
 
 
 @app.route('/api/export', methods=['POST'])

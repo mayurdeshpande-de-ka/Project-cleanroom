@@ -391,6 +391,22 @@ async function syncFromExcel() {
   }
 }
 
+async function syncAWS() {
+  const btn = document.getElementById('sync-aws-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size: 16px;">sync</span> Syncing...';
+  try {
+    const data = await apiFetch('/api/sync-rds', 'POST', {});
+    if (data.success) { showToast(data.message); loadStats(); loadRecords(); }
+    else showToast('AWS Sync failed: ' + data.message, true);
+  } catch (e) { showToast('AWS Sync error: ' + e.message, true); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;">cloud_sync</span> Sync AWS';
+  }
+}
+
+
 function handleSideNav(view) {
   document.querySelectorAll('.sidelink').forEach(el => {
     const isAct = el.dataset.view === view;
@@ -645,6 +661,8 @@ function bindEvents() {
 
   // Selection export bar removed, keeping clearSelection internal for Esc key
   document.getElementById('reload-btn').addEventListener('click', syncFromExcel);
+  const syncAwsBtn = document.getElementById('sync-aws-btn');
+  if (syncAwsBtn) syncAwsBtn.addEventListener('click', syncAWS);
 
   document.getElementById('modal-close').addEventListener('click',  closeModal);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
