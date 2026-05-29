@@ -8,6 +8,9 @@ import io
 import os
 from datetime import datetime
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, jsonify, redirect, render_template, request, send_file
 
 app = Flask(__name__)
