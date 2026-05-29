@@ -243,27 +243,25 @@ def sync_rds():
         return jsonify({'success': False, 'message': 'AWS RDS credentials not configured'}), 400
         
     try:
-        # Fetch distinct state_code and eroll_publication combinations
+        # Fetch distinct state_abb, el_type, and el_year combinations
         with rds_conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT state_code, eroll_publication FROM public.epic_details_v2")
+            cur.execute("SELECT DISTINCT state_abb, el_type, el_year FROM public.ac_election_mapping")
             rds_data = cur.fetchall()
             
-        # rds_data contains tuples of (state_code, eroll_publication), e.g., ('S11', '2024')
-        rds_set = set((row[0], str(row[1]).strip()) for row in rds_data if row[0] and row[1])
+        # rds_data contains tuples of (state_abb, el_type, el_year), e.g., ('MH', 'AE-BP', 2010)
+        rds_set = set((str(row[0]).strip(), str(row[1]).strip(), str(row[2]).strip()) for row in rds_data if row[0] and row[1] and row[2])
         
         turso_conn = get_db()
-        turso_records = turso_conn.execute("SELECT id, state, el_year FROM records").fetchall()
+        turso_records = turso_conn.execute("SELECT id, state, el_type, el_year FROM records").fetchall()
         
         updates = []
         for rec in turso_records:
-            state = rec['state']
+            state = str(rec['state']).strip()
+            el_type = str(rec['el_type']).strip()
             el_year = str(rec['el_year']).strip()
             
-            # Translate 2-letter state code to ECI code
-            eci_code = STATE_TO_ECI.get(state)
-            
             # If this exact combination exists in RDS, mark it as in_db
-            if eci_code and (eci_code, el_year) in rds_set:
+            if (state, el_type, el_year) in rds_set:
                 updates.append(rec['id'])
                 
         if updates:
