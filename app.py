@@ -195,10 +195,10 @@ def get_stats():
     wip_count = conn.execute('SELECT COUNT(*) as cnt FROM records WHERE wip=1').fetchone()['cnt']
 
     state_rows = conn.execute(
-        'SELECT state, state_name, COUNT(*) AS total, '
-        'SUM(CASE WHEN overall_status="db_pushed" THEN 1 ELSE 0 END) AS completed, '
-        'SUM(CASE WHEN overall_status="extracted" THEN 1 ELSE 0 END) AS extracted '
-        'FROM records GROUP BY state ORDER BY state'
+        "SELECT state, state_name, COUNT(*) AS total, "
+        "SUM(CASE WHEN overall_status IN ('completed', 'db_pushed') THEN 1 ELSE 0 END) AS completed, "
+        "SUM(CASE WHEN overall_status='extracted' THEN 1 ELSE 0 END) AS extracted "
+        "FROM records GROUP BY state ORDER BY state"
     ).fetchall()
 
     conn.close()

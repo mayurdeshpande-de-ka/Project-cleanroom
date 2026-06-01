@@ -69,7 +69,7 @@ async function loadStats() {
     set('sl-all-count', total);
     set('sl-dl-count',  bs.downloaded || '0');
     set('sl-ex-count',  bs.extracted  || '0');
-    set('sl-co-count',  bs.db_pushed  || '0');
+    set('sl-co-count',  (bs.db_pushed || 0) + (bs.completed || 0));
     set('sl-pe-count',  bs.pending    || '0');
     set('sl-mi-count',  bs.missing    || '0');
     set('sl-wip-count', s.wip_count   || '0');
@@ -80,7 +80,7 @@ async function loadStats() {
     set('kpi-mi-count', bs.missing    || '0');
 
     // Progress bar
-    const completed = bs.db_pushed || 0;
+    const completed = (bs.db_pushed || 0) + (bs.completed || 0);
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
     document.getElementById('progress-bar-fill').style.width = `${pct}%`;
     document.getElementById('progress-text').textContent = `${completed} / ${total} Completed`;
