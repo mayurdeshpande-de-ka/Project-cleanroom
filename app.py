@@ -6,6 +6,9 @@ Flask backend with SQLite. Run: python app.py
 import csv
 import io
 import os
+import json
+import threading
+import time
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -103,6 +106,45 @@ STATE_TO_ECI = {
     'LD': 'U06', 'PY': 'U07', 'JK': 'U08', 'LA': 'U09'
 }
 
+# ── Live AWS Caching ────────────────────────────────────────────────────────
+
+LIVE_JSON_PATH = os.path.join(BASE_DIR, 'live_extracted.json')
+
+def fetch_live_json_sync():
+    rds_conn = get_rds_db()
+    if not rds_conn:
+        return
+    try:
+        with rds_conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT state_abb, el_type, el_year FROM public.ac_election_mapping")
+            rds_data = cur.fetchall()
+        
+        extracted_list = [{"state": str(r[0]).strip(), "el_type": str(r[1]).strip(), "el_year": str(r[2]).strip()} for r in rds_data if r[0] and r[1] and r[2]]
+        
+        with open(LIVE_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump(extracted_list, f)
+    except Exception as e:
+        print(f"Background thread error fetching AWS data: {e}")
+    finally:
+        rds_conn.close()
+
+def update_live_extracted_json():
+    while True:
+        fetch_live_json_sync()
+        time.sleep(60) # sync every 60 seconds
+
+bg_thread = threading.Thread(target=update_live_extracted_json, daemon=True)
+bg_thread.start()
+
+def get_live_extracted_set():
+    if not os.path.exists(LIVE_JSON_PATH):
+        return set()
+    try:
+        with open(LIVE_JSON_PATH, 'r', encoding='utf-8') as f:
+            extracted_list = json.load(f)
+        return set((item['state'], item['el_type'], item['el_year']) for item in extracted_list)
+    except Exception:
+        return set()
 
 
 # ── Routes ──────────────────────────────────────────────────────────────────
@@ -152,7 +194,21 @@ def get_records():
 
     rows = conn.execute(query, params).fetchall()
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    
+    live_extracted = get_live_extracted_set()
+    filtered_rows = []
+    
+    # If the user is specifically looking for completed items (status='completed'), don't filter them out entirely,
+    # but since the requirement is to hide them dynamically when no specific status is requested:
+    for r in rows:
+        r_dict = dict(r)
+        if not status and not search:
+            is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+            if is_live_completed:
+                continue
+        filtered_rows.append(r_dict)
+        
+    return jsonify(filtered_rows)
 
 
 @app.route('/api/records/<int:record_id>', methods=['PATCH'])
@@ -180,36 +236,55 @@ def update_record(record_id):
 @app.route('/api/stats')
 def get_stats():
     conn = get_db()
-
-    status_rows = conn.execute(
-        'SELECT overall_status, COUNT(*) AS cnt FROM records GROUP BY overall_status'
-    ).fetchall()
-    by_status = {r['overall_status']: r['cnt'] for r in status_rows}
-
-    sir_rows = conn.execute(
-        'SELECT overall_status, COUNT(*) AS cnt FROM records '
-        'WHERE is_sir_state=1 GROUP BY overall_status'
-    ).fetchall()
-    sir_by_status = {r['overall_status']: r['cnt'] for r in sir_rows}
-    
-    wip_count = conn.execute('SELECT COUNT(*) as cnt FROM records WHERE wip=1').fetchone()['cnt']
-
-    state_rows = conn.execute(
-        "SELECT state, state_name, COUNT(*) AS total, "
-        "SUM(CASE WHEN overall_status IN ('completed', 'db_pushed') THEN 1 ELSE 0 END) AS completed, "
-        "SUM(CASE WHEN overall_status='extracted' THEN 1 ELSE 0 END) AS extracted "
-        "FROM records GROUP BY state ORDER BY state"
-    ).fetchall()
-
+    all_records = conn.execute('SELECT * FROM records').fetchall()
     conn.close()
 
+    live_extracted = get_live_extracted_set()
+
+    by_status = {'downloaded': 0, 'extracted': 0, 'missing': 0, 'pending': 0, 'completed': 0, 'db_pushed': 0}
+    sir_by_status = {'downloaded': 0, 'extracted': 0, 'missing': 0, 'pending': 0, 'completed': 0, 'db_pushed': 0}
+    wip_count = 0
+    state_dict = {}
+
+    for r in all_records:
+        r_dict = dict(r)
+        state = r_dict['state']
+        
+        if state not in state_dict:
+            state_dict[state] = {
+                'state': state,
+                'state_name': r_dict['state_name'],
+                'total': 0,
+                'completed': 0,
+                'extracted': 0
+            }
+            
+        state_dict[state]['total'] += 1
+        
+        is_live_completed = (str(state).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+        effective_status = 'completed' if is_live_completed else r_dict['overall_status']
+        
+        by_status[effective_status] = by_status.get(effective_status, 0) + 1
+        if r_dict['is_sir_state'] == 1:
+            sir_by_status[effective_status] = sir_by_status.get(effective_status, 0) + 1
+            
+        if r_dict['wip'] == 1 and not is_live_completed:
+            wip_count += 1
+            
+        if effective_status in ('completed', 'db_pushed'):
+            state_dict[state]['completed'] += 1
+        if effective_status == 'extracted':
+            state_dict[state]['extracted'] += 1
+
     total = sum(by_status.values())
+    state_rows = [state_dict[s] for s in sorted(state_dict.keys())]
+
     return jsonify({
         'total': total,
         'by_status': by_status,
         'sir_by_status': sir_by_status,
         'wip_count': wip_count,
-        'by_state': [dict(r) for r in state_rows],
+        'by_state': state_rows,
     })
 
 
@@ -244,6 +319,9 @@ def get_filters():
 @app.route('/api/sync-rds', methods=['POST'])
 def sync_rds():
     """Syncs the 'in_db' status from AWS RDS Postgres."""
+    # Force an immediate JSON sync
+    fetch_live_json_sync()
+    
     rds_conn = get_rds_db()
     if not rds_conn:
         return jsonify({'success': False, 'message': 'AWS RDS credentials not configured'}), 400
@@ -251,7 +329,7 @@ def sync_rds():
     try:
         # Fetch distinct state_abb, el_type, and el_year combinations
         with rds_conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT state_abb, el_type, el_year FROM public.form20_summary_view")
+            cur.execute("SELECT DISTINCT state_abb, el_type, el_year FROM public.ac_election_mapping")
             rds_data = cur.fetchall()
             
         # rds_data contains tuples of (state_abb, el_type, el_year), e.g., ('MH', 'AE-BP', 2010)
