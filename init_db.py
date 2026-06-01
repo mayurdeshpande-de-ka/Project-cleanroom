@@ -83,12 +83,27 @@ def init_database(excel_path='Form20 Backlog Tracker.xlsx', db_path='data.db'):
         })
         tracker_keys.add(key)
 
-    # ── 2. 25th May — Downloaded records ──────────────────────────────────
-    ws_25may = wb['25th May']
+    # ── 2. Download Report CSV — Downloaded records ─────────────────────────────
+    import csv
     downloaded_keys = set()
-    for row in list(ws_25may.iter_rows(values_only=True))[1:]:
-        if row[3]:
-            downloaded_keys.add(str(row[3]).strip())
+    missing_reasons = {}  # key -> reason string
+    csv_path = os.path.join(os.path.dirname(excel_path), 'Form 20 Download Report for Allotted States.csv')
+    if os.path.exists(csv_path):
+        with open(csv_path, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                state = str(row.get('State Code', '')).strip()
+                election = str(row.get('Election', '')).strip()
+                year = str(row.get('Year', '')).strip()
+                status = str(row.get('Drive Status', '')).strip()
+                note = str(row.get('Jira Note', '')).strip()
+                if not (state and election and year):
+                    continue
+                key = f'{state}-{election}-{year}'
+                if status == 'Present':
+                    downloaded_keys.add(key)
+                elif note:
+                    missing_reasons[key] = note
 
     # ── 3. SIR States list ────────────────────────────────────────────────
     ws_sir = wb['SIR States']
@@ -206,6 +221,11 @@ def init_database(excel_path='Form20 Backlog Tracker.xlsx', db_path='data.db'):
         is_sir = 1 if (rec['sir_state'] or rec['state'] in sir_states_set) else 0
         retro_ready = 1 if (is_sir and status in ('extracted', 'completed')) else 0
 
+        # Use CSV missing reason as remark if record has no existing remark
+        remark = rec['remark']
+        if status == 'missing' and not remark and rec['key'] in missing_reasons:
+            remark = missing_reasons[rec['key']]
+
         c.execute('''
             INSERT OR REPLACE INTO records
                 (state, state_name, el_type, el_year, key, is_sir_state,
@@ -215,7 +235,7 @@ def init_database(excel_path='Form20 Backlog Tracker.xlsx', db_path='data.db'):
         ''', (
             rec['state'], state_name, rec['el_type'], rec['el_year'], rec['key'],
             is_sir, download_status, extraction_status, db_status, status,
-            1 if rec['wip'] else 0, rec['remark'], today, retro_ready,
+            1 if rec['wip'] else 0, remark, today, retro_ready,
             datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         ))
         inserted += 1

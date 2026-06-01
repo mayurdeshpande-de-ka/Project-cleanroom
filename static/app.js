@@ -17,8 +17,10 @@ let currentView = 'states';
 let currentDetailState = null;
 
 const filters = {
-  state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false,
+  state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false, show_bp: false,
 };
+
+let activeKpi = null; // tracks which KPI card is active
 
 const STATUS_CONFIG = {
   'missing':    { bg: 'bg-slate-50',   text: 'text-slate-700',   border: 'border-slate-200',  dot: 'bg-slate-500',   label: 'Missing' },
@@ -72,6 +74,11 @@ async function loadStats() {
     set('sl-mi-count',  bs.missing    || '0');
     set('sl-wip-count', s.wip_count   || '0');
 
+    // KPI Cards
+    set('kpi-dl-count', bs.downloaded || '0');
+    set('kpi-ex-count', bs.extracted  || '0');
+    set('kpi-mi-count', bs.missing    || '0');
+
     // Progress bar
     const completed = bs.db_pushed || 0;
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -89,6 +96,7 @@ async function loadRecords() {
   if (filters.sir_only) params.set('sir_only', '1');
   if (filters.wip)      params.set('wip', '1');
   if (filters.search)   params.set('search',   filters.search);
+  if (!filters.show_bp) params.set('hide_bp',  '1');
 
   try {
     allRecords = await apiFetch('/api/records?' + params);
@@ -442,7 +450,53 @@ function handleSideNav(view) {
     filters.status   = '';
     filters.wip      = false;
   }
+  // Reset KPI active state when side nav changes
+  setActiveKpi(null);
   loadStats(); loadRecords();
+}
+
+// KPI Card click handler
+window.handleKpiClick = function(status) {
+  if (activeKpi === status) {
+    // Clicking active KPI deselects it → show all
+    setActiveKpi(null);
+    filters.status = '';
+    filters.wip = false;
+  } else {
+    setActiveKpi(status);
+    filters.status = status;
+    filters.wip = false;
+    // Reset side nav to 'all' visually
+    handleSideNav.__noKpiReset = true;
+    document.querySelectorAll('.sidelink').forEach(el => {
+      el.classList.remove('bg-slate-100', 'text-slate-900', 'font-bold', 'border-slate-800');
+      el.classList.add('text-slate-500', 'border-transparent');
+    });
+    handleSideNav.__noKpiReset = false;
+  }
+  goBackToStates();
+  loadRecords();
+};
+
+function setActiveKpi(status) {
+  activeKpi = status;
+  const kpiMap = {
+    downloaded: { id: 'kpi-downloaded', ring: 'ring-blue-400',   border: 'border-blue-400',   text: 'text-blue-700'   },
+    extracted:  { id: 'kpi-extracted',  ring: 'ring-purple-400', border: 'border-purple-400', text: 'text-purple-700' },
+    missing:    { id: 'kpi-missing',    ring: 'ring-red-400',    border: 'border-red-400',    text: 'text-red-700'    },
+  };
+  ['downloaded','extracted','missing'].forEach(s => {
+    const cfg = kpiMap[s];
+    const btn = document.getElementById(cfg.id);
+    if (!btn) return;
+    if (s === status) {
+      btn.classList.add('ring-2', cfg.ring, cfg.border, cfg.text);
+      btn.classList.remove('border-slate-200');
+    } else {
+      btn.classList.remove('ring-2', cfg.ring, cfg.border, cfg.text);
+      btn.classList.add('border-slate-200');
+    }
+  });
 }
 
 function showToast(msg, isErr = false) {
@@ -632,7 +686,7 @@ function bindEvents() {
   });
 
   document.getElementById('clear-filters').addEventListener('click', () => {
-    Object.assign(filters, { state:'', el_type:'', year:'', status:'', sir_only:false, search:'' });
+    Object.assign(filters, { state:'', el_type:'', year:'', status:'', sir_only:false, search:'', show_bp: false });
     ['filter-state','filter-type','filter-year'].forEach(id => {
       document.getElementById(id).value = '';
     });
@@ -640,6 +694,17 @@ function bindEvents() {
     document.getElementById('filter-year').disabled = true;
     document.getElementById('filter-sir').checked   = false;
     document.getElementById('global-search').value  = '';
+    // Reset KPI active state
+    setActiveKpi(null);
+    // Reset BP toggle button to default visual
+    const bpBtn = document.getElementById('toggle-bp-btn');
+    if (bpBtn) {
+      bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
+      bpBtn.className = bpBtn.className
+        .replace('bg-indigo-600', 'bg-white')
+        .replace('text-white', 'text-slate-500')
+        .replace('border-indigo-600', 'border-slate-200');
+    }
     handleSideNav('all'); // also resets status filter
   });
 
@@ -765,4 +830,26 @@ function bindEvents() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { closeModal(); closeRetroModal(); clearSelection(); }
   });
+
+  // BP toggle button
+  const bpBtn = document.getElementById('toggle-bp-btn');
+  if (bpBtn) {
+    bpBtn.addEventListener('click', () => {
+      filters.show_bp = !filters.show_bp;
+      if (filters.show_bp) {
+        bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt_off</span> Hide BP Years';
+        bpBtn.className = bpBtn.className
+          .replace('bg-white', 'bg-indigo-600')
+          .replace('text-slate-500', 'text-white')
+          .replace('border-slate-200', 'border-indigo-600');
+      } else {
+        bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
+        bpBtn.className = bpBtn.className
+          .replace('bg-indigo-600', 'bg-white')
+          .replace('text-white', 'text-slate-500')
+          .replace('border-indigo-600', 'border-slate-200');
+      }
+      loadRecords();
+    });
+  }
 }

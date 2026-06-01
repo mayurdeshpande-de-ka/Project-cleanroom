@@ -139,6 +139,9 @@ def get_records():
         query += ' AND is_sir_state = 1'
     if request.args.get('wip') == '1':
         query += ' AND wip = 1'
+    hide_bp = request.args.get('hide_bp', '')
+    if hide_bp == '1':
+        query += " AND el_type NOT LIKE '%-BP'"
     if search:
         like = f'%{search}%'
         query += (' AND (state LIKE ? OR state_name LIKE ?'

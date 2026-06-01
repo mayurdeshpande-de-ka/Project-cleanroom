@@ -159,7 +159,7 @@
             </div>
             
             <div class="flex items-center gap-2">
-                <!-- Inline Filters matching the design -->
+                <!-- Inline Filters -->
                 <select id="filter-state" class="h-7 px-2 py-0 text-[11px] font-medium text-slate-600 border border-slate-200 bg-white rounded focus:ring-0 focus:border-slate-300 hover:border-slate-300 outline-none cursor-pointer">
                     <option value="">All States</option>
                 </select>
@@ -173,8 +173,56 @@
                     <input type="checkbox" id="filter-sir" class="rounded border-slate-300 text-slate-800 focus:ring-slate-800 w-3 h-3 cursor-pointer" />
                     SIR Only
                 </label>
+                <!-- BP Years Toggle -->
+                <button id="toggle-bp-btn" title="Toggle BP election years" class="h-7 px-2.5 text-[11px] font-semibold border rounded transition-all duration-150 flex items-center gap-1 bg-white text-slate-500 border-slate-200 hover:border-indigo-400 hover:text-indigo-600">
+                    <span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span>
+                    Show BP Years
+                </button>
                 <button id="clear-filters" class="h-7 px-2 text-[11px] font-medium text-slate-500 hover:text-slate-800 transition-colors">Clear</button>
             </div>
+        </div>
+
+        <!-- KPI Summary Cards -->
+        <div class="px-6 py-3 bg-white border-b border-slate-100 grid grid-cols-3 gap-3 shrink-0">
+            <!-- Downloaded -->
+            <button id="kpi-downloaded" onclick="handleKpiClick('downloaded')" class="kpi-card group flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all duration-150 bg-white text-left">
+                <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+                    <span class="material-symbols-outlined text-blue-500" style="font-size:18px;">download_done</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Downloaded</p>
+                    <p class="text-[20px] font-black text-slate-800 leading-tight" id="kpi-dl-count">—</p>
+                </div>
+                <div class="ml-auto">
+                    <span class="material-symbols-outlined text-slate-300 group-hover:text-blue-400 transition-colors" style="font-size:16px;">arrow_forward</span>
+                </div>
+            </button>
+            <!-- Extracted -->
+            <button id="kpi-extracted" onclick="handleKpiClick('extracted')" class="kpi-card group flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-purple-300 hover:shadow-sm transition-all duration-150 bg-white text-left">
+                <div class="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center shrink-0 group-hover:bg-purple-100 transition-colors">
+                    <span class="material-symbols-outlined text-purple-500" style="font-size:18px;">database</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Extracted</p>
+                    <p class="text-[20px] font-black text-slate-800 leading-tight" id="kpi-ex-count">—</p>
+                </div>
+                <div class="ml-auto">
+                    <span class="material-symbols-outlined text-slate-300 group-hover:text-purple-400 transition-colors" style="font-size:16px;">arrow_forward</span>
+                </div>
+            </button>
+            <!-- Missing -->
+            <button id="kpi-missing" onclick="handleKpiClick('missing')" class="kpi-card group flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-red-300 hover:shadow-sm transition-all duration-150 bg-white text-left">
+                <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center shrink-0 group-hover:bg-red-100 transition-colors">
+                    <span class="material-symbols-outlined text-red-500" style="font-size:18px;">error_outline</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Missing</p>
+                    <p class="text-[20px] font-black text-slate-800 leading-tight" id="kpi-mi-count">—</p>
+                </div>
+                <div class="ml-auto">
+                    <span class="material-symbols-outlined text-slate-300 group-hover:text-red-400 transition-colors" style="font-size:16px;">arrow_forward</span>
+                </div>
+            </button>
         </div>
 
         <!-- Detail View Back Header (Hidden by default) -->
