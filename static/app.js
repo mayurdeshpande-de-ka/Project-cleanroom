@@ -849,15 +849,15 @@ function bindEvents() {
       if (filters.show_bp) {
         bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt_off</span> Hide BP Years';
         bpBtn.className = bpBtn.className
-          .replace('bg-white', 'bg-indigo-600')
-          .replace('text-slate-500', 'text-white')
-          .replace('border-slate-200', 'border-indigo-600');
+          .replace('bg-white', 'bg-indigo-50')
+          .replace('text-slate-500', 'text-indigo-700')
+          .replace('border-slate-200', 'border-indigo-200');
       } else {
         bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
         bpBtn.className = bpBtn.className
-          .replace('bg-indigo-600', 'bg-white')
-          .replace('text-white', 'text-slate-500')
-          .replace('border-indigo-600', 'border-slate-200');
+          .replace('bg-indigo-50', 'bg-white')
+          .replace('text-indigo-700', 'text-slate-500')
+          .replace('border-indigo-200', 'border-slate-200');
       }
       loadStats();
       loadRecords();

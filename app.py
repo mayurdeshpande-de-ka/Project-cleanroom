@@ -163,12 +163,19 @@ def get_download_report_dict():
 def apply_dynamic_status(r_dict, live_extracted, download_report):
     key = f"{str(r_dict['state']).strip()}-{str(r_dict['el_type']).strip()}-{str(r_dict['el_year']).strip()}"
     
+    current_status = r_dict.get('overall_status')
+    
     # 1. Apply download report status if present
-    if key in download_report and r_dict.get('overall_status') not in ('db_pushed', 'completed'):
-        r_dict['overall_status'] = download_report[key]
+    if key in download_report:
+        csv_status = download_report[key]
+        if current_status not in ('db_pushed', 'completed', 'extracted'):
+            r_dict['overall_status'] = csv_status
+        if csv_status == 'missing' and current_status in ('downloaded', 'pending'):
+            r_dict['overall_status'] = 'missing'
         
     # 2. Apply live extracted status if present
-    is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+    aws_el_type = str(r_dict['el_type']).strip().replace('-BP', '')
+    is_live_completed = (str(r_dict['state']).strip(), aws_el_type, str(r_dict['el_year']).strip()) in live_extracted
     if is_live_completed:
         r_dict['overall_status'] = 'completed'
         r_dict['db_status'] = 'in_db'
