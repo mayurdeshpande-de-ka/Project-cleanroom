@@ -149,6 +149,32 @@ def get_live_extracted_set():
     except Exception:
         return set()
 
+DOWNLOAD_JSON_PATH = os.path.join(BASE_DIR, 'download_report.json')
+
+def get_download_report_dict():
+    if not os.path.exists(DOWNLOAD_JSON_PATH):
+        return {}
+    try:
+        with open(DOWNLOAD_JSON_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def apply_dynamic_status(r_dict, live_extracted, download_report):
+    key = f"{str(r_dict['state']).strip()}-{str(r_dict['el_type']).strip()}-{str(r_dict['el_year']).strip()}"
+    
+    # 1. Apply download report status if present
+    if key in download_report and r_dict.get('overall_status') not in ('db_pushed', 'completed'):
+        r_dict['overall_status'] = download_report[key]
+        
+    # 2. Apply live extracted status if present
+    is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+    if is_live_completed:
+        r_dict['overall_status'] = 'completed'
+        r_dict['db_status'] = 'in_db'
+        
+    return r_dict
+
 
 # ── Routes ──────────────────────────────────────────────────────────────────
 
@@ -195,15 +221,12 @@ def get_records():
     conn.close()
     
     live_extracted = get_live_extracted_set()
+    download_report = get_download_report_dict()
     filtered_rows = []
     
     for r in rows:
         r_dict = dict(r)
-        
-        is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
-        if is_live_completed:
-            r_dict['overall_status'] = 'completed'
-            r_dict['db_status'] = 'in_db'
+        r_dict = apply_dynamic_status(r_dict, live_extracted, download_report)
             
         if status:
             if r_dict['overall_status'] != status:
@@ -239,9 +262,8 @@ def update_record(record_id):
     
     r_dict = dict(row)
     live_extracted = get_live_extracted_set()
-    is_live = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
-    if is_live:
-        r_dict['overall_status'] = 'completed'
+    download_report = get_download_report_dict()
+    r_dict = apply_dynamic_status(r_dict, live_extracted, download_report)
         
     return jsonify(r_dict)
 
@@ -279,6 +301,7 @@ def get_stats():
     conn.close()
 
     live_extracted = get_live_extracted_set()
+    download_report = get_download_report_dict()
 
     by_status = {'downloaded': 0, 'extracted': 0, 'missing': 0, 'pending': 0, 'completed': 0, 'db_pushed': 0}
     sir_by_status = {'downloaded': 0, 'extracted': 0, 'missing': 0, 'pending': 0, 'completed': 0, 'db_pushed': 0}
@@ -287,6 +310,8 @@ def get_stats():
 
     for r in all_records:
         r_dict = dict(r)
+        r_dict = apply_dynamic_status(r_dict, live_extracted, download_report)
+        
         state = r_dict['state']
         
         if state not in state_dict:
@@ -300,14 +325,13 @@ def get_stats():
             
         state_dict[state]['total'] += 1
         
-        is_live_completed = (str(state).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
-        effective_status = 'completed' if is_live_completed else r_dict['overall_status']
+        effective_status = r_dict['overall_status']
         
         by_status[effective_status] = by_status.get(effective_status, 0) + 1
         if r_dict['is_sir_state'] == 1:
             sir_by_status[effective_status] = sir_by_status.get(effective_status, 0) + 1
             
-        if r_dict['wip'] == 1 and not is_live_completed:
+        if r_dict['wip'] == 1 and effective_status != 'completed':
             wip_count += 1
             
         if effective_status in ('completed', 'db_pushed'):
@@ -421,12 +445,11 @@ def export_records():
     else:
         rows = conn.execute('SELECT * FROM records ORDER BY state, el_type, el_year').fetchall()
     live_extracted = get_live_extracted_set()
+    download_report = get_download_report_dict()
     records = []
     for r in rows:
         r_dict = dict(r)
-        is_live = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
-        if is_live:
-            r_dict['overall_status'] = 'completed'
+        r_dict = apply_dynamic_status(r_dict, live_extracted, download_report)
         records.append(r_dict)
     conn.close()
 
