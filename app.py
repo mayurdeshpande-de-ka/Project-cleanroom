@@ -116,7 +116,11 @@ def fetch_live_json_sync():
         return
     try:
         with rds_conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT state_abb, el_type, el_year FROM public.ac_election_mapping")
+            cur.execute("""
+                SELECT DISTINCT r.state_abb, e.el_type, e.el_year 
+                FROM election_result r 
+                JOIN election e ON r.el_id = e.el_id
+            """)
             rds_data = cur.fetchall()
         
         extracted_list = [{"state": str(r[0]).strip(), "el_type": str(r[1]).strip(), "el_year": str(r[2]).strip()} for r in rds_data if r[0] and r[1] and r[2]]
