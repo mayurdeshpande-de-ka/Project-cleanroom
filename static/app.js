@@ -17,7 +17,7 @@ let currentView = 'states';
 let currentDetailState = null;
 
 const filters = {
-  state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false, show_bp: false,
+  state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false, show_bp: true,
 };
 
 let activeKpi = null; // tracks which KPI card is active
@@ -60,8 +60,18 @@ async function loadFilters() {
 // Previous loadRetroFilters removed
 
 async function loadStats() {
+  const params = new URLSearchParams();
+  if (filters.state)    params.set('state',    filters.state);
+  if (filters.el_type)  params.set('el_type',  filters.el_type);
+  if (filters.year)     params.set('year',     filters.year);
+  if (filters.status)   params.set('status',   filters.status);
+  if (filters.sir_only) params.set('sir_only', '1');
+  if (filters.wip)      params.set('wip', '1');
+  if (filters.search)   params.set('search',   filters.search);
+  if (!filters.show_bp) params.set('hide_bp',  '1');
+
   try {
-    const s = await apiFetch('/api/stats');
+    const s = await apiFetch('/api/stats?' + params);
     const bs = s.by_status || {};
     const total = s.total || 0;
 
@@ -686,7 +696,7 @@ function bindEvents() {
   });
 
   document.getElementById('clear-filters').addEventListener('click', () => {
-    Object.assign(filters, { state:'', el_type:'', year:'', status:'', sir_only:false, search:'', show_bp: false });
+    Object.assign(filters, { state:'', el_type:'', year:'', status:'', sir_only:false, search:'', show_bp: true });
     ['filter-state','filter-type','filter-year'].forEach(id => {
       document.getElementById(id).value = '';
     });
@@ -699,11 +709,11 @@ function bindEvents() {
     // Reset BP toggle button to default visual
     const bpBtn = document.getElementById('toggle-bp-btn');
     if (bpBtn) {
-      bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
+      bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt_off</span> Hide BP Years';
       bpBtn.className = bpBtn.className
-        .replace('bg-indigo-600', 'bg-white')
-        .replace('text-white', 'text-slate-500')
-        .replace('border-indigo-600', 'border-slate-200');
+        .replace('bg-white', 'bg-indigo-600')
+        .replace('text-slate-500', 'text-white')
+        .replace('border-slate-200', 'border-indigo-600');
     }
     handleSideNav('all'); // also resets status filter
   });
@@ -849,6 +859,7 @@ function bindEvents() {
           .replace('text-white', 'text-slate-500')
           .replace('border-indigo-600', 'border-slate-200');
       }
+      loadStats();
       loadRecords();
     });
   }
