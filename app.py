@@ -177,10 +177,6 @@ def get_records():
         query += ' AND el_type = ?'; params.append(el_type)
     if year:
         query += ' AND el_year = ?'; params.append(int(year))
-    if status:
-        query += ' AND overall_status = ?'; params.append(status)
-    elif not search:
-        query += " AND overall_status NOT IN ('db_pushed', 'completed') AND db_status != 'in_db'"
     if sir_only == '1':
         query += ' AND is_sir_state = 1'
     if request.args.get('wip') == '1':
@@ -202,14 +198,21 @@ def get_records():
     live_extracted = get_live_extracted_set()
     filtered_rows = []
     
-    # If the user is specifically looking for completed items (status='completed'), don't filter them out entirely,
-    # but since the requirement is to hide them dynamically when no specific status is requested:
     for r in rows:
         r_dict = dict(r)
-        if not status and not search:
-            is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
-            if is_live_completed:
+        
+        is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+        if is_live_completed:
+            r_dict['overall_status'] = 'completed'
+            r_dict['db_status'] = 'in_db'
+            
+        if status:
+            if r_dict['overall_status'] != status:
                 continue
+        elif not search:
+            if r_dict['overall_status'] in ('db_pushed', 'completed') or r_dict['db_status'] == 'in_db':
+                continue
+                
         filtered_rows.append(r_dict)
         
     return jsonify(filtered_rows)
@@ -234,13 +237,46 @@ def update_record(record_id):
     conn.commit()
     row = conn.execute('SELECT * FROM records WHERE id = ?', [record_id]).fetchone()
     conn.close()
-    return jsonify(dict(row))
+    
+    r_dict = dict(row)
+    live_extracted = get_live_extracted_set()
+    is_live = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+    if is_live:
+        r_dict['overall_status'] = 'completed'
+        
+    return jsonify(r_dict)
 
 
 @app.route('/api/stats')
 def get_stats():
     conn = get_db()
-    all_records = conn.execute('SELECT * FROM records').fetchall()
+    query = 'SELECT * FROM records WHERE 1=1'
+    params = []
+
+    state    = request.args.get('state', '').strip()
+    el_type  = request.args.get('el_type', '').strip()
+    year     = request.args.get('year', '').strip()
+    sir_only = request.args.get('sir_only', '')
+    search   = request.args.get('search', '').strip()
+    hide_bp  = request.args.get('hide_bp', '')
+
+    if state:
+        query += ' AND state = ?'; params.append(state)
+    if el_type:
+        query += ' AND el_type = ?'; params.append(el_type)
+    if year:
+        query += ' AND el_year = ?'; params.append(int(year))
+    if sir_only == '1':
+        query += ' AND is_sir_state = 1'
+    if hide_bp == '1':
+        query += " AND el_type NOT LIKE '%-BP'"
+    if search:
+        like = f'%{search}%'
+        query += (' AND (state LIKE ? OR state_name LIKE ?'
+                  ' OR key LIKE ? OR assigned_to LIKE ? OR remark LIKE ?)')
+        params.extend([like, like, like, like, like])
+
+    all_records = conn.execute(query, params).fetchall()
     conn.close()
 
     live_extracted = get_live_extracted_set()
@@ -385,7 +421,14 @@ def export_records():
         rows = conn.execute(f'SELECT * FROM records WHERE id IN ({ph})', record_ids).fetchall()
     else:
         rows = conn.execute('SELECT * FROM records ORDER BY state, el_type, el_year').fetchall()
-    records = [dict(r) for r in rows]
+    live_extracted = get_live_extracted_set()
+    records = []
+    for r in rows:
+        r_dict = dict(r)
+        is_live = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+        if is_live:
+            r_dict['overall_status'] = 'completed'
+        records.append(r_dict)
     conn.close()
 
     # Friendly column names for export
