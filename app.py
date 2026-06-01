@@ -134,7 +134,7 @@ def get_records():
     if status:
         query += ' AND overall_status = ?'; params.append(status)
     elif not search:
-        query += " AND overall_status != 'db_pushed'"
+        query += " AND overall_status NOT IN ('db_pushed', 'completed') AND db_status != 'in_db'"
     if sir_only == '1':
         query += ' AND is_sir_state = 1'
     if request.args.get('wip') == '1':
@@ -251,7 +251,7 @@ def sync_rds():
     try:
         # Fetch distinct state_abb, el_type, and el_year combinations
         with rds_conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT state_abb, el_type, el_year FROM public.ac_election_mapping")
+            cur.execute("SELECT DISTINCT state_abb, el_type, el_year FROM public.form20_summary_view")
             rds_data = cur.fetchall()
             
         # rds_data contains tuples of (state_abb, el_type, el_year), e.g., ('MH', 'AE-BP', 2010)
