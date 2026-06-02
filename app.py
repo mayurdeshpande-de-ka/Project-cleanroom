@@ -236,7 +236,10 @@ def get_records():
         r_dict = apply_dynamic_status(r_dict, live_extracted, download_report)
             
         if status:
-            if r_dict['overall_status'] != status:
+            if status == 'nondownloaded':
+                if r_dict['overall_status'] not in ('missing', 'pending'):
+                    continue
+            elif r_dict['overall_status'] != status:
                 continue
         elif not search:
             if r_dict['overall_status'] in ('db_pushed', 'completed') or r_dict['db_status'] == 'in_db':

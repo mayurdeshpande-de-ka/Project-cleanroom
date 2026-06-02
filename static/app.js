@@ -82,6 +82,7 @@ async function loadStats() {
     set('sl-co-count',  (bs.db_pushed || 0) + (bs.completed || 0));
     set('sl-pe-count',  bs.pending    || '0');
     set('sl-mi-count',  bs.missing    || '0');
+    set('sl-nd-count',  ((bs.missing || 0) + (bs.pending || 0)) || '0');
     set('sl-wip-count', s.wip_count   || '0');
 
     // KPI Cards
@@ -350,7 +351,9 @@ function openModal(id) {
   if (!rec) return;
   editingId = id;
   document.getElementById('modal-title').textContent = `${rec.state} — ${rec.el_type} — ${rec.el_year}`;
-  document.getElementById('modal-key').textContent = rec.key;
+  document.getElementById('sl-mi-count').textContent = stats.by_status.missing || 0;
+  document.getElementById('sl-nd-count').textContent = (stats.by_status.missing || 0) + (stats.by_status.pending || 0);
+  document.getElementById('sl-dl-count').textContent = stats.by_status.downloaded || 0;
   document.getElementById('edit-status').value = rec.overall_status || 'missing';
   document.getElementById('edit-remark').value = rec.remark || '';
   
@@ -449,7 +452,7 @@ function handleSideNav(view) {
     }
   });
 
-  const statusMap = { downloaded:'downloaded', extracted:'extracted', completed:'completed', pending:'pending', missing:'missing' };
+  const statusMap = { nondownloaded:'nondownloaded', downloaded:'downloaded', extracted:'extracted', completed:'completed', pending:'pending', missing:'missing' };
   if (statusMap[view]) {
     filters.status   = statusMap[view];
     filters.wip      = false;
