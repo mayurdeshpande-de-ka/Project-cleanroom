@@ -172,6 +172,10 @@ def apply_dynamic_status(r_dict, live_extracted, download_report):
             r_dict['overall_status'] = csv_status
         if csv_status == 'missing' and current_status in ('downloaded', 'pending'):
             r_dict['overall_status'] = 'missing'
+    else:
+        # Strict enforcement: if it's not in the report, it is pending
+        if current_status not in ('db_pushed', 'completed', 'extracted'):
+            r_dict['overall_status'] = 'pending'
         
     # 2. Apply live extracted status if present
     aws_el_type = str(r_dict['el_type']).strip().replace('-BP', '')
@@ -237,7 +241,7 @@ def get_records():
             
         if status:
             if status == 'nondownloaded':
-                if r_dict['overall_status'] not in ('missing', 'pending'):
+                if r_dict['overall_status'] != 'pending':
                     continue
             elif r_dict['overall_status'] != status:
                 continue

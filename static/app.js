@@ -82,7 +82,7 @@ async function loadStats() {
     set('sl-co-count',  (bs.db_pushed || 0) + (bs.completed || 0));
     set('sl-pe-count',  bs.pending    || '0');
     set('sl-mi-count',  bs.missing    || '0');
-    set('sl-nd-count',  ((bs.missing || 0) + (bs.pending || 0)) || '0');
+    set('sl-nd-count',  bs.pending || '0');
     set('sl-wip-count', s.wip_count   || '0');
 
     // KPI Cards
