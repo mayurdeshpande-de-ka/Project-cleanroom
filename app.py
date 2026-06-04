@@ -9,7 +9,7 @@ import os
 import json
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -160,7 +160,24 @@ def get_download_report_dict():
     except Exception:
         return {}
 
-def apply_dynamic_status(r_dict, live_extracted, download_report):
+HISTORY_JSON_PATH = os.path.join(BASE_DIR, 'completion_history.json')
+def get_completion_history():
+    if not os.path.exists(HISTORY_JSON_PATH):
+        return {}
+    try:
+        with open(HISTORY_JSON_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_completion_history(history):
+    try:
+        with open(HISTORY_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump(history, f, indent=2)
+    except Exception:
+        pass
+
+def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
     key = f"{str(r_dict['state']).strip()}-{str(r_dict['el_type']).strip()}-{str(r_dict['el_year']).strip()}"
     
     current_status = r_dict.get('overall_status')
@@ -180,6 +197,11 @@ def apply_dynamic_status(r_dict, live_extracted, download_report):
         r_dict['overall_status'] = 'completed'
         r_dict['db_status'] = 'in_db'
         
+    if history is not None and r_dict['overall_status'] in ('completed', 'db_pushed'):
+        if key not in history:
+            history[key] = datetime.now().strftime('%Y-%m-%d')
+            history['_updated'] = True
+            
     return r_dict
 
 
@@ -229,11 +251,12 @@ def get_records():
     
     live_extracted = get_live_extracted_set()
     download_report = get_download_report_dict()
+    history = get_completion_history()
     filtered_rows = []
     
     for r in rows:
         r_dict = dict(r)
-        r_dict = apply_dynamic_status(r_dict, live_extracted, download_report)
+        r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
             
         if status:
             if r_dict['overall_status'] != status:
@@ -243,6 +266,9 @@ def get_records():
                 continue
                 
         filtered_rows.append(r_dict)
+        
+    if history.pop('_updated', False):
+        save_completion_history(history)
         
     return jsonify(filtered_rows)
 
@@ -270,7 +296,10 @@ def update_record(record_id):
     r_dict = dict(row)
     live_extracted = get_live_extracted_set()
     download_report = get_download_report_dict()
-    r_dict = apply_dynamic_status(r_dict, live_extracted, download_report)
+    history = get_completion_history()
+    r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
+    if history.pop('_updated', False):
+        save_completion_history(history)
         
     return jsonify(r_dict)
 
@@ -309,6 +338,7 @@ def get_stats():
 
     live_extracted = get_live_extracted_set()
     download_report = get_download_report_dict()
+    history = get_completion_history()
 
     by_status = {'downloaded': 0, 'extracted': 0, 'missing': 0, 'pending': 0, 'completed': 0, 'db_pushed': 0}
     sir_by_status = {'downloaded': 0, 'extracted': 0, 'missing': 0, 'pending': 0, 'completed': 0, 'db_pushed': 0}
@@ -317,7 +347,7 @@ def get_stats():
 
     for r in all_records:
         r_dict = dict(r)
-        r_dict = apply_dynamic_status(r_dict, live_extracted, download_report)
+        r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
         
         state = r_dict['state']
         
@@ -349,12 +379,52 @@ def get_stats():
     total = sum(by_status.values())
     state_rows = [state_dict[s] for s in sorted(state_dict.keys())]
 
+    if history.pop('_updated', False):
+        save_completion_history(history)
+
     return jsonify({
         'total': total,
         'by_status': by_status,
         'sir_by_status': sir_by_status,
         'wip_count': wip_count,
         'by_state': state_rows,
+    })
+
+
+@app.route('/api/glance_report')
+def glance_report():
+    history = get_completion_history()
+    history.pop('_updated', None)
+    
+    # Calculate weekly completions
+    weekly_counts = {}
+    records_by_week = {}
+    
+    for key, date_str in history.items():
+        try:
+            d = datetime.strptime(date_str, '%Y-%m-%d').date()
+            # ISO week: Monday to Sunday
+            start_of_week = d - timedelta(days=d.weekday())
+            end_of_week = start_of_week + timedelta(days=6)
+            week_label = f"{start_of_week.strftime('%Y-%m-%d')} to {end_of_week.strftime('%Y-%m-%d')}"
+            
+            weekly_counts[week_label] = weekly_counts.get(week_label, 0) + 1
+            if week_label not in records_by_week:
+                records_by_week[week_label] = []
+            records_by_week[week_label].append({'key': key, 'date': date_str})
+        except Exception:
+            continue
+            
+    # Sort weeks descending
+    sorted_weeks = sorted(weekly_counts.keys(), reverse=True)
+    
+    recent_week = sorted_weeks[0] if sorted_weeks else None
+    recent_records = records_by_week[recent_week] if recent_week else []
+    
+    return jsonify({
+        'weekly_counts': {w: weekly_counts[w] for w in sorted_weeks},
+        'recent_week': recent_week,
+        'recent_records': recent_records
     })
 
 

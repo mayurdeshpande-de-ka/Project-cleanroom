@@ -20,7 +20,9 @@ const filters = {
   state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false, show_bp: false,
 };
 
-let activeKpi = null; // tracks which KPI card is active
+let activeKpi = null;
+let pieChart = null;
+let barChart = null; // tracks which KPI card is active
 
 const STATUS_CONFIG = {
   'missing':    { bg: 'bg-slate-50',   text: 'text-slate-700',   border: 'border-slate-200',  dot: 'bg-slate-500',   label: 'Missing' },
@@ -861,4 +863,91 @@ function bindEvents() {
       loadRecords();
     });
   }
+}
+
+
+async function loadDashboardStats() {
+    try {
+        const stats = await apiFetch('/api/stats');
+        const glance = await apiFetch('/api/glance_report');
+        
+        // Update Pie Chart
+        const bs = stats.by_status;
+        const pieData = {
+            labels: ['Downloaded', 'Missing', 'Completed/DB Pushed', 'Pending'],
+            datasets: [{
+                data: [
+                    bs.downloaded || 0,
+                    bs.missing || 0,
+                    (bs.completed || 0) + (bs.db_pushed || 0),
+                    bs.pending || 0
+                ],
+                backgroundColor: ['#6366f1', '#ef4444', '#10b981', '#f59e0b'],
+                borderWidth: 0
+            }]
+        };
+        
+        if (pieChart) {
+            pieChart.data = pieData;
+            pieChart.update();
+        } else {
+            const ctx = document.getElementById('statusPieChart').getContext('2d');
+            pieChart = new Chart(ctx, {
+                type: 'pie',
+                data: pieData,
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+        }
+        
+        // Update Bar Chart
+        const weeks = Object.keys(glance.weekly_counts).reverse();
+        const counts = weeks.map(w => glance.weekly_counts[w]);
+        
+        if (barChart) {
+            barChart.data.labels = weeks;
+            barChart.data.datasets[0].data = counts;
+            barChart.update();
+        } else {
+            const ctx2 = document.getElementById('weeklyBarChart').getContext('2d');
+            barChart = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: weeks,
+                    datasets: [{
+                        label: 'Completions',
+                        data: counts,
+                        backgroundColor: '#6366f1',
+                        borderRadius: 4
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            });
+        }
+        
+        // Update Glance Report
+        document.getElementById('glance-week-label').textContent = glance.recent_week || 'No Data';
+        document.getElementById('glance-total-count').textContent = glance.recent_records ? glance.recent_records.length : 0;
+        
+        const tbody = document.getElementById('glance-tbody');
+        tbody.innerHTML = '';
+        if (glance.recent_records && glance.recent_records.length > 0) {
+            document.getElementById('glance-empty').classList.add('hidden');
+            glance.recent_records.forEach(r => {
+                tbody.innerHTML += `<tr class="border-b border-slate-50"><td class="py-2 px-3">${r.key}</td><td class="py-2 px-3">${r.date}</td></tr>`;
+            });
+        } else {
+            document.getElementById('glance-empty').classList.remove('hidden');
+        }
+        
+    } catch (e) {
+        console.error(e);
+    }
 }
