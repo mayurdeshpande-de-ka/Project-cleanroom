@@ -197,7 +197,7 @@ def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
         r_dict['overall_status'] = 'completed'
         r_dict['db_status'] = 'in_db'
         
-    if history is not None and r_dict['overall_status'] in ('completed', 'db_pushed'):
+    if history is not None and r_dict['overall_status'] == 'db_pushed':
         if key not in history:
             history[key] = datetime.now().strftime('%Y-%m-%d')
             history['_updated'] = True

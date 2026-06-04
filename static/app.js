@@ -907,89 +907,87 @@ async function loadDashboardStats() {
             apiFetch('/api/glance_report' + (monthFilter ? '?month=' + monthFilter : ''))
         ]);
 
-        // ── Populate month dropdown (only on first load) ──────────────────────
+        // ── Populate month dropdown (only once) ───────────────────────────────
         const sel = document.getElementById('dash-month-filter');
         if (sel && glance.available_months && sel.options.length <= 1) {
             glance.available_months.forEach(m => {
                 const opt = document.createElement('option');
                 opt.value = m;
                 const [yr, mo] = m.split('-');
-                opt.textContent = new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                opt.textContent = new Date(yr, parseInt(mo) - 1)
+                    .toLocaleString('default', { month: 'long', year: 'numeric' });
                 sel.appendChild(opt);
             });
         }
 
-        // ── KPI Strip ─────────────────────────────────────────────────────────
-        const allWeekCounts = glance.weekly_counts || {};
-        const allMonthCounts = glance.monthly_counts || {};
-        const totalCompletions = Object.values(allWeekCounts).reduce((a, b) => a + b, 0);
-        const currentWeek = glance.current_week || '';
-        const thisWeekCount = allWeekCounts[currentWeek] || 0;
-        const thisMonthKey = new Date().toISOString().slice(0, 7);
-        const thisMonthCount = allMonthCounts[thisMonthKey] || 0;
-        const weeksActive = Object.keys(allWeekCounts).length;
-
         const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-        setEl('dash-kpi-total',      totalCompletions);
-        setEl('dash-kpi-this-week',  thisWeekCount);
-        setEl('dash-kpi-this-month', thisMonthCount);
-        setEl('dash-kpi-weeks',      weeksActive);
-
-        // ── Status Pie Chart ──────────────────────────────────────────────────
         const bs = stats.by_status || {};
+        const total = stats.total || 0;
+        const dbPushed = (bs.db_pushed || 0) + (bs.completed || 0);
+
+        // ── KPI Cards ─────────────────────────────────────────────────────────
+        setEl('dash-total',      total);
+        setEl('dash-db-pushed',  dbPushed);
+        setEl('dash-downloaded', bs.downloaded || 0);
+        setEl('dash-missing',    bs.missing    || 0);
+
+        // ── Progress Banner ───────────────────────────────────────────────────
+        const pct = total > 0 ? Math.round((dbPushed / total) * 100) : 0;
+        setEl('dash-progress-pct', pct + '%');
+        setEl('dash-progress-sub', `${dbPushed} / ${total} records pushed to DB`);
+        const progBar = document.getElementById('dash-prog-bar');
+        if (progBar) progBar.style.width = pct + '%';
+
+        // ── Status Donut Chart ────────────────────────────────────────────────
+        const pieLabels = ['Downloaded', 'Extracted', 'DB Pushed / Completed', 'Missing', 'Pending'];
+        const pieVals   = [
+            bs.downloaded || 0,
+            bs.extracted  || 0,
+            (bs.db_pushed || 0) + (bs.completed || 0),
+            bs.missing    || 0,
+            bs.pending    || 0
+        ];
+        const pieColors = ['#6366f1', '#a855f7', '#10b981', '#ef4444', '#f59e0b'];
         const pieData = {
-            labels: ['Downloaded', 'Missing', 'Completed / DB Pushed', 'Pending', 'Extracted'],
-            datasets: [{
-                data: [
-                    bs.downloaded || 0,
-                    bs.missing || 0,
-                    (bs.completed || 0) + (bs.db_pushed || 0),
-                    bs.pending || 0,
-                    bs.extracted || 0
-                ],
-                backgroundColor: ['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#a855f7'],
-                borderWidth: 2,
-                borderColor: '#fff'
-            }]
+            labels: pieLabels,
+            datasets: [{ data: pieVals, backgroundColor: pieColors, borderWidth: 2, borderColor: '#fff' }]
         };
         if (pieChart) {
             pieChart.data = pieData; pieChart.update();
         } else {
-            const ctx = document.getElementById('statusPieChart').getContext('2d');
-            pieChart = new Chart(ctx, {
+            pieChart = new Chart(document.getElementById('statusPieChart').getContext('2d'), {
                 type: 'doughnut',
                 data: pieData,
                 options: {
-                    responsive: true, maintainAspectRatio: false,
-                    cutout: '60%',
-                    plugins: { legend: { position: 'right', labels: { font: { size: 11 }, padding: 12, boxWidth: 12 } } }
+                    responsive: true, maintainAspectRatio: false, cutout: '62%',
+                    plugins: {
+                        legend: { position: 'right', labels: { font: { size: 11 }, padding: 14, boxWidth: 12 } }
+                    }
                 }
             });
         }
 
-        // ── Monthly Bar Chart ─────────────────────────────────────────────────
+        // ── Monthly Bar Chart (DB Pushed trend) ───────────────────────────────
+        const allMonthCounts = glance.monthly_counts || {};
+        const thisMonthKey = new Date().toISOString().slice(0, 7);
         const sortedMonths = Object.keys(allMonthCounts).sort();
-        const monthLabels = sortedMonths.map(m => {
+        const monthLabels  = sortedMonths.map(m => {
             const [yr, mo] = m.split('-');
             return new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'short', year: '2-digit' });
         });
         const monthData = sortedMonths.map(m => allMonthCounts[m]);
 
-        if (window.monthlyBarChart && window.monthlyBarChart.destroy) {
-            window.monthlyBarChart.destroy(); window.monthlyBarChart = null;
-        }
-        const ctxM = document.getElementById('monthlyBarChart').getContext('2d');
-        window.monthlyBarChart = new Chart(ctxM, {
+        if (window.monthlyBarChart) { window.monthlyBarChart.destroy(); window.monthlyBarChart = null; }
+        window.monthlyBarChart = new Chart(document.getElementById('monthlyBarChart').getContext('2d'), {
             type: 'bar',
             data: {
                 labels: monthLabels,
                 datasets: [{
-                    label: 'Completions',
+                    label: 'DB Pushed',
                     data: monthData,
-                    backgroundColor: sortedMonths.map(m => m === thisMonthKey ? '#10b981' : '#6366f180'),
+                    backgroundColor: sortedMonths.map(m => m === thisMonthKey ? '#10b981' : '#818cf8'),
                     borderColor:     sortedMonths.map(m => m === thisMonthKey ? '#059669' : '#6366f1'),
-                    borderWidth: 1,
-                    borderRadius: 5
+                    borderWidth: 1, borderRadius: 6
                 }]
             },
             options: {
@@ -1000,37 +998,36 @@ async function loadDashboardStats() {
         });
 
         // ── Weekly Velocity Chart ─────────────────────────────────────────────
-        let weekCounts, weekKeys, subtitle;
+        const allWeekCounts = glance.weekly_counts || {};
+        let weekKeys, weekCounts, subtitle;
         if (monthFilter && Object.keys(glance.weekly_in_month || {}).length > 0) {
             const wim = glance.weekly_in_month;
-            weekKeys = Object.keys(wim).sort();
+            weekKeys   = Object.keys(wim).sort();
             weekCounts = weekKeys.map(k => wim[k]);
-            subtitle = 'Showing weeks in ' + monthFilter;
+            subtitle   = 'Weeks in ' + new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
         } else {
-            weekKeys = Object.keys(allWeekCounts).sort();
+            weekKeys   = Object.keys(allWeekCounts).sort();
             weekCounts = weekKeys.map(k => allWeekCounts[k]);
-            subtitle = monthFilter ? 'No data for selected month' : 'All time — select a month above to drill in';
+            subtitle   = monthFilter ? 'No DB pushes recorded for this month' : 'All weeks since tracking began';
         }
         setEl('weekly-chart-subtitle', subtitle);
-
         const shortWeek = k => k.slice(5, 10); // MM-DD
+
         if (barChart) {
             barChart.data.labels = weekKeys.map(shortWeek);
             barChart.data.datasets[0].data = weekCounts;
             barChart.update();
         } else {
-            const ctx2 = document.getElementById('weeklyBarChart').getContext('2d');
-            barChart = new Chart(ctx2, {
+            barChart = new Chart(document.getElementById('weeklyBarChart').getContext('2d'), {
                 type: 'bar',
                 data: {
                     labels: weekKeys.map(shortWeek),
                     datasets: [{
-                        label: 'Completions',
+                        label: 'DB Pushed',
                         data: weekCounts,
                         backgroundColor: '#a5b4fc',
                         borderColor: '#6366f1',
-                        borderWidth: 1,
-                        borderRadius: 4
+                        borderWidth: 1, borderRadius: 4
                     }]
                 },
                 options: {
@@ -1041,42 +1038,54 @@ async function loadDashboardStats() {
             });
         }
 
-        // ── All-Weeks Glance Accordion ────────────────────────────────────────
+        // ── Glance Report Accordion (DB Pushed only) ──────────────────────────
         const accordion = document.getElementById('glance-accordion');
         const allWeeks = glance.all_weeks || [];
         setEl('glance-weeks-count', allWeeks.length + ' week' + (allWeeks.length !== 1 ? 's' : ''));
 
         if (allWeeks.length === 0) {
-            accordion.innerHTML = '<p class="p-6 text-center text-sm text-slate-400">No data yet. Completions will appear here.</p>';
+            accordion.innerHTML = `<p class="p-8 text-center text-sm text-slate-400 flex flex-col items-center gap-2">
+                <span class="material-symbols-outlined text-slate-300" style="font-size:32px;">hourglass_empty</span>
+                No DB pushed records tracked yet. Push records to DB and they will appear here week-wise.
+            </p>`;
         } else {
             accordion.innerHTML = allWeeks.map((w, i) => {
                 const isCurrent = w.is_current;
                 const badge = isCurrent
-                    ? '<span class="ml-2 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Current</span>'
+                    ? `<span class="ml-2 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Current Week</span>`
                     : '';
                 const rows = w.records.map(r =>
-                    `<tr class="hover:bg-slate-50"><td class="py-1.5 px-4 text-[12px] font-mono text-slate-700">${r.key}</td><td class="py-1.5 px-4 text-[12px] text-slate-400">${r.date}</td></tr>`
+                    `<tr class="hover:bg-indigo-50/40 transition-colors">
+                        <td class="py-2 px-5 text-[12px] font-mono text-slate-700 font-semibold">${r.key}</td>
+                        <td class="py-2 px-5 text-[12px] text-slate-400">${r.date}</td>
+                        <td class="py-2 px-5"><span class="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full">DB Pushed</span></td>
+                    </tr>`
                 ).join('');
-                return `
-                <div class="week-item" id="week-${i}">
-                    <button onclick="toggleWeek(${i})" class="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors text-left">
-                        <span class="text-[12px] font-semibold text-slate-700">
-                            ${w.week}${badge}
-                        </span>
+                return `<div id="week-${i}">
+                    <button onclick="toggleWeek(${i})" class="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left group">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full ${isCurrent ? 'bg-emerald-400' : 'bg-indigo-300'} shrink-0"></span>
+                            <span class="text-[12px] font-semibold text-slate-700">${w.week}${badge}</span>
+                        </div>
                         <div class="flex items-center gap-3">
-                            <span class="text-sm font-black ${isCurrent ? 'text-emerald-600' : 'text-indigo-600'}">${w.count}</span>
-                            <span class="material-symbols-outlined text-slate-300 week-chevron-${i}" style="font-size:16px;transition:transform 0.2s">${i === 0 ? 'expand_less' : 'expand_more'}</span>
+                            <span class="text-[11px] font-bold ${isCurrent ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-50 text-indigo-600'} px-2.5 py-0.5 rounded-full">${w.count} records</span>
+                            <span class="material-symbols-outlined text-slate-300 group-hover:text-slate-500 week-chevron-${i}" style="font-size:16px;transition:transform 0.2s">${i === 0 ? 'expand_less' : 'expand_more'}</span>
                         </div>
                     </button>
-                    <div id="week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-slate-50">
+                    <div id="week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-slate-50 bg-slate-50/50">
                         <table class="w-full">
-                            <thead><tr class="bg-slate-50"><th class="py-1.5 px-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Election Key</th><th class="py-1.5 px-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date</th></tr></thead>
+                            <thead><tr class="border-b border-slate-100">
+                                <th class="py-2 px-5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Election Key</th>
+                                <th class="py-2 px-5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date Pushed</th>
+                                <th class="py-2 px-5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                            </tr></thead>
                             <tbody>${rows}</tbody>
                         </table>
                     </div>
                 </div>`;
             }).join('');
         }
+
 
     } catch (e) {
         console.error('loadDashboardStats:', e);
