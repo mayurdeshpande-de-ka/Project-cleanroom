@@ -336,16 +336,25 @@
                 </div>
 
                 <!-- Progress Banner -->
-                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-5 text-white flex items-center justify-between shadow-md">
-                    <div>
-                        <p class="text-[11px] font-semibold text-indigo-200 uppercase tracking-widest mb-1">Overall Progress</p>
-                        <p class="text-3xl font-black" id="dash-progress-pct">0%</p>
-                        <p class="text-[12px] text-indigo-200 mt-1" id="dash-progress-sub">0 / 0 records completed</p>
-                    </div>
-                    <div class="w-48">
-                        <div class="h-3 bg-white/20 rounded-full overflow-hidden">
-                            <div id="dash-prog-bar" class="h-full bg-white rounded-full transition-all duration-700" style="width:0%"></div>
+                <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] relative overflow-hidden flex flex-col justify-between">
+                    <div class="flex items-start justify-between mb-6">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
+                                <span class="material-symbols-outlined text-emerald-500" style="font-size:20px;">task_alt</span>
+                            </div>
+                            <div>
+                                <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Overall Progress</p>
+                                <p class="text-[12px] text-slate-500 font-medium mt-0.5" id="dash-progress-sub">0 / 0 records completed</p>
+                            </div>
                         </div>
+                        <div class="text-right">
+                            <p class="text-3xl font-black text-slate-800 tracking-tight" id="dash-progress-pct">0%</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Sleek Progress Bar -->
+                    <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                        <div id="dash-prog-bar" class="bg-gradient-to-r from-emerald-400 to-teal-500 h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(52,211,153,0.4)]" style="width:0%"></div>
                     </div>
                 </div>
 
