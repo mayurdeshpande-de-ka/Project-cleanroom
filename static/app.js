@@ -35,8 +35,9 @@ const STATUS_CONFIG = {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadFilters();
-  loadStats();
-  loadRecords();
+  // Dashboard is the default opening view
+  loadDashboardStats();
+  // Listing data loads lazily when user navigates to it
   bindEvents();
 });
 
@@ -763,6 +764,9 @@ function bindEvents() {
     navListing.classList.remove('text-slate-500','font-medium');
     navDashboard.classList.remove('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
     navDashboard.classList.add('text-slate-500','font-medium');
+    // Load listing data lazily
+    loadStats();
+    loadRecords();
   }
   function showDashboard() {
     dashView.classList.remove('hidden');    dashView.classList.add('flex');
@@ -781,6 +785,27 @@ function bindEvents() {
   const dashRefreshBtn  = document.getElementById('dash-refresh-btn');
   if (dashMonthFilter) dashMonthFilter.addEventListener('change', loadDashboardStats);
   if (dashRefreshBtn)  dashRefreshBtn.addEventListener('click',   loadDashboardStats);
+
+  // ── Glance Report Panel ─────────────────────────────────────────────────
+  const navGlance    = document.getElementById('nav-glance');
+  const glanceOvl    = document.getElementById('glance-overlay');
+  const glancePanel  = document.getElementById('glance-panel');
+  const glanceClose  = document.getElementById('glance-close');
+  const glanceMoFil  = document.getElementById('glance-month-filter');
+
+  function openGlancePanel() {
+    if (glanceOvl) glanceOvl.classList.remove('opacity-0','pointer-events-none');
+    if (glancePanel) glancePanel.classList.remove('translate-x-full');
+    loadGlancePanel();
+  }
+  function closeGlancePanel() {
+    if (glanceOvl) glanceOvl.classList.add('opacity-0','pointer-events-none');
+    if (glancePanel) glancePanel.classList.add('translate-x-full');
+  }
+  if (navGlance)   navGlance.addEventListener('click',  openGlancePanel);
+  if (glanceClose) glanceClose.addEventListener('click', closeGlancePanel);
+  if (glanceOvl)   glanceOvl.addEventListener('click', e => { if (e.target === glanceOvl) closeGlancePanel(); });
+  if (glanceMoFil) glanceMoFil.addEventListener('change', loadGlancePanel);
 
   document.getElementById('nav-retro').addEventListener('click', e => {
     e.preventDefault();
@@ -1038,16 +1063,45 @@ async function loadDashboardStats() {
             });
         }
 
-        // ── Glance Report Accordion (DB Pushed only) ──────────────────────────
-        const accordion = document.getElementById('glance-accordion');
+    } catch (e) {
+        console.error('loadDashboardStats:', e);
+    }
+}
+
+
+
+
+
+async function loadGlancePanel() {
+    const monthFilter = (document.getElementById('glance-month-filter') || {}).value || '';
+    try {
+        const glance = await apiFetch('/api/glance_report' + (monthFilter ? '?month=' + monthFilter : ''));
+        
+        // Populate month dropdown (only once)
+        const sel = document.getElementById('glance-month-filter');
+        if (sel && glance.available_months && sel.options.length <= 1) {
+            glance.available_months.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                const [yr, mo] = m.split('-');
+                opt.textContent = new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                sel.appendChild(opt);
+            });
+        }
+        
+        const accordion = document.getElementById('glance-panel-accordion');
+        const countSpan = document.getElementById('glance-panel-count');
         const allWeeks = glance.all_weeks || [];
-        setEl('glance-weeks-count', allWeeks.length + ' week' + (allWeeks.length !== 1 ? 's' : ''));
+        
+        if (countSpan) countSpan.textContent = allWeeks.reduce((acc, w) => acc + w.count, 0) + ' records';
+        
+        if (!accordion) return;
 
         if (allWeeks.length === 0) {
-            accordion.innerHTML = `<p class="p-8 text-center text-sm text-slate-400 flex flex-col items-center gap-2">
-                <span class="material-symbols-outlined text-slate-300" style="font-size:32px;">hourglass_empty</span>
-                No DB pushed records tracked yet. Push records to DB and they will appear here week-wise.
-            </p>`;
+            accordion.innerHTML = `<div class="p-10 text-center flex flex-col items-center gap-3 text-slate-400">
+                <span class="material-symbols-outlined" style="font-size:36px;">hourglass_empty</span>
+                <p class="text-sm">No DB pushed records found.</p>
+            </div>`;
         } else {
             accordion.innerHTML = allWeeks.map((w, i) => {
                 const isCurrent = w.is_current;
@@ -1061,18 +1115,18 @@ async function loadDashboardStats() {
                         <td class="py-2 px-5"><span class="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full">DB Pushed</span></td>
                     </tr>`
                 ).join('');
-                return `<div id="week-${i}">
-                    <button onclick="toggleWeek(${i})" class="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left group">
+                return `<div id="panel-week-${i}">
+                    <button onclick="togglePanelWeek(${i})" class="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left group">
                         <div class="flex items-center gap-2">
                             <span class="w-2 h-2 rounded-full ${isCurrent ? 'bg-emerald-400' : 'bg-indigo-300'} shrink-0"></span>
                             <span class="text-[12px] font-semibold text-slate-700">${w.week}${badge}</span>
                         </div>
                         <div class="flex items-center gap-3">
                             <span class="text-[11px] font-bold ${isCurrent ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-50 text-indigo-600'} px-2.5 py-0.5 rounded-full">${w.count} records</span>
-                            <span class="material-symbols-outlined text-slate-300 group-hover:text-slate-500 week-chevron-${i}" style="font-size:16px;transition:transform 0.2s">${i === 0 ? 'expand_less' : 'expand_more'}</span>
+                            <span class="material-symbols-outlined text-slate-300 group-hover:text-slate-500 panel-week-chevron-${i}" style="font-size:16px;transition:transform 0.2s">${i === 0 ? 'expand_less' : 'expand_more'}</span>
                         </div>
                     </button>
-                    <div id="week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-slate-50 bg-slate-50/50">
+                    <div id="panel-week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-slate-50 bg-slate-50/50">
                         <table class="w-full">
                             <thead><tr class="border-b border-slate-100">
                                 <th class="py-2 px-5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Election Key</th>
@@ -1085,18 +1139,15 @@ async function loadDashboardStats() {
                 </div>`;
             }).join('');
         }
-
-
     } catch (e) {
-        console.error('loadDashboardStats:', e);
+        console.error('loadGlancePanel:', e);
     }
 }
 
-function toggleWeek(i) {
-    const body = document.getElementById('week-body-' + i);
-    const chevron = document.querySelector('.week-chevron-' + i);
+function togglePanelWeek(i) {
+    const body = document.getElementById('panel-week-body-' + i);
+    const chevron = document.querySelector('.panel-week-chevron-' + i);
     if (!body) return;
     const hidden = body.classList.toggle('hidden');
     if (chevron) chevron.textContent = hidden ? 'expand_more' : 'expand_less';
 }
-
