@@ -17,7 +17,7 @@ let currentView = 'states';
 let currentDetailState = null;
 
 const filters = {
-  state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false, show_bp: true,
+  state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false, show_bp: false,
 };
 
 let activeKpi = null; // tracks which KPI card is active
@@ -696,7 +696,15 @@ function bindEvents() {
   });
 
   document.getElementById('clear-filters').addEventListener('click', () => {
-    Object.assign(filters, { state:'', el_type:'', year:'', status:'', sir_only:false, search:'', show_bp: true });
+    Object.assign(filters, { state:'', el_type:'', year:'', status:'', sir_only:false, search:'', show_bp: false });
+    const bpBtn = document.getElementById('toggle-bp-btn');
+    if (bpBtn) {
+        bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
+        bpBtn.className = bpBtn.className
+          .replace('bg-indigo-50', 'bg-white')
+          .replace('text-indigo-700', 'text-slate-500')
+          .replace('border-indigo-200', 'border-slate-200');
+    }
     ['filter-state','filter-type','filter-year'].forEach(id => {
       document.getElementById(id).value = '';
     });
@@ -735,9 +743,6 @@ function bindEvents() {
   });
 
   // Selection export bar removed, keeping clearSelection internal for Esc key
-  document.getElementById('reload-btn').addEventListener('click', syncFromExcel);
-  const syncAwsBtn = document.getElementById('sync-aws-btn');
-  if (syncAwsBtn) syncAwsBtn.addEventListener('click', syncAWS);
 
   document.getElementById('modal-close').addEventListener('click',  closeModal);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
