@@ -395,37 +395,74 @@ def get_stats():
 def glance_report():
     history = get_completion_history()
     history.pop('_updated', None)
-    
-    # Calculate weekly completions
-    weekly_counts = {}
-    records_by_week = {}
-    
+
+    filter_month = request.args.get('month', '').strip()
+
+    weekly_counts  = {}
+    records_by_week  = {}
+    monthly_counts = {}
+    records_by_month = {}
+
+    today = datetime.now().date()
+    cur_week_start = today - timedelta(days=today.weekday())
+    cur_week_end   = cur_week_start + timedelta(days=6)
+    cur_week_label = f"{cur_week_start.strftime('%Y-%m-%d')} to {cur_week_end.strftime('%Y-%m-%d')}"
+
     for key, date_str in history.items():
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
-            # ISO week: Monday to Sunday
-            start_of_week = d - timedelta(days=d.weekday())
-            end_of_week = start_of_week + timedelta(days=6)
-            week_label = f"{start_of_week.strftime('%Y-%m-%d')} to {end_of_week.strftime('%Y-%m-%d')}"
-            
-            weekly_counts[week_label] = weekly_counts.get(week_label, 0) + 1
-            if week_label not in records_by_week:
-                records_by_week[week_label] = []
-            records_by_week[week_label].append({'key': key, 'date': date_str})
         except Exception:
             continue
-            
-    # Sort weeks descending
-    sorted_weeks = sorted(weekly_counts.keys(), reverse=True)
-    
-    recent_week = sorted_weeks[0] if sorted_weeks else None
-    recent_records = records_by_week[recent_week] if recent_week else []
-    
+
+        # Weekly bucket
+        sw = d - timedelta(days=d.weekday())
+        ew = sw + timedelta(days=6)
+        wl = f"{sw.strftime('%Y-%m-%d')} to {ew.strftime('%Y-%m-%d')}"
+        weekly_counts[wl] = weekly_counts.get(wl, 0) + 1
+        records_by_week.setdefault(wl, []).append({'key': key, 'date': date_str})
+
+        # Monthly bucket
+        ml = d.strftime('%Y-%m')
+        monthly_counts[ml] = monthly_counts.get(ml, 0) + 1
+        records_by_month.setdefault(ml, []).append({'key': key, 'date': date_str})
+
+    sorted_weeks  = sorted(weekly_counts.keys(), reverse=True)
+    sorted_months = sorted(monthly_counts.keys(), reverse=True)
+
+    all_weeks = [
+        {
+            'week': w,
+            'count': weekly_counts[w],
+            'is_current': w == cur_week_label,
+            'records': sorted(records_by_week[w], key=lambda x: x['date'], reverse=True)
+        }
+        for w in sorted_weeks
+    ]
+
+    # Weekly breakdown inside a selected month
+    weekly_in_month = {}
+    if filter_month:
+        for rec in records_by_month.get(filter_month, []):
+            try:
+                d2 = datetime.strptime(rec['date'], '%Y-%m-%d').date()
+                sw2 = d2 - timedelta(days=d2.weekday())
+                ew2 = sw2 + timedelta(days=6)
+                wl2 = f"{sw2.strftime('%Y-%m-%d')} to {ew2.strftime('%Y-%m-%d')}"
+                weekly_in_month[wl2] = weekly_in_month.get(wl2, 0) + 1
+            except Exception:
+                continue
+        weekly_in_month = dict(sorted(weekly_in_month.items()))
+
     return jsonify({
-        'weekly_counts': {w: weekly_counts[w] for w in sorted_weeks},
-        'recent_week': recent_week,
-        'recent_records': recent_records
+        'weekly_counts':    {w: weekly_counts[w] for w in sorted_weeks},
+        'monthly_counts':   {m: monthly_counts[m] for m in sorted_months},
+        'all_weeks':        all_weeks,
+        'current_week':     cur_week_label,
+        'filter_month':     filter_month,
+        'weekly_in_month':  weekly_in_month,
+        'available_months': sorted_months,
     })
+
 
 
 @app.route('/api/filters')

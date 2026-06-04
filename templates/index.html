@@ -258,12 +258,103 @@
             </table>
         </div>
 
-        <!-- Pagination Footer (Stick to Bottom) -->
+        <!-- Pagination Footer -->
         <div class="bg-white border-t border-slate-200 p-3 flex items-center justify-between z-30 shrink-0">
             <span class="text-[11px] text-slate-500 font-medium" id="pagination-text">Showing 0 records</span>
         </div>
+        </div><!-- end listing-view -->
+
+        <!-- ========== DASHBOARD VIEW ========== -->
+        <div id="dashboard-view" class="hidden flex-col w-full h-full overflow-y-auto bg-slate-50">
+
+            <!-- Dashboard Header -->
+            <div class="sticky top-0 z-30 bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shrink-0">
+                <div>
+                    <h1 class="text-sm font-bold text-slate-800">Analytical Dashboard</h1>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Weekly &amp; monthly completion insights</p>
+                </div>
+                <!-- Calendar Month Filter -->
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-slate-400" style="font-size:16px;">calendar_month</span>
+                    <select id="dash-month-filter" class="h-7 px-2 py-0 text-[11px] font-medium text-slate-600 border border-slate-200 bg-white rounded focus:ring-0 focus:border-slate-400 outline-none cursor-pointer">
+                        <option value="">All Time</option>
+                    </select>
+                    <button id="dash-refresh-btn" title="Refresh" class="h-7 w-7 flex items-center justify-center border border-slate-200 rounded hover:bg-slate-50 transition-colors">
+                        <span class="material-symbols-outlined text-slate-400" style="font-size:15px;">refresh</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-6 flex flex-col gap-6">
+
+                <!-- KPI Strip -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-1 shadow-sm">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Completions</p>
+                        <p class="text-3xl font-black text-indigo-600" id="dash-kpi-total">—</p>
+                    </div>
+                    <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-1 shadow-sm">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">This Week</p>
+                        <p class="text-3xl font-black text-emerald-600" id="dash-kpi-this-week">—</p>
+                    </div>
+                    <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-1 shadow-sm">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">This Month</p>
+                        <p class="text-3xl font-black text-amber-600" id="dash-kpi-this-month">—</p>
+                    </div>
+                    <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-1 shadow-sm">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Weeks Active</p>
+                        <p class="text-3xl font-black text-purple-600" id="dash-kpi-weeks">—</p>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Status Pie -->
+                    <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                        <h3 class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Overall Status Distribution</h3>
+                        <div class="relative h-[260px] flex items-center justify-center">
+                            <canvas id="statusPieChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Monthly Bar -->
+                    <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                        <h3 class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Monthly Completion Trend</h3>
+                        <div class="relative h-[260px]">
+                            <canvas id="monthlyBarChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Weekly Velocity (filtered by month if selected) -->
+                <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <h3 class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Weekly Completion Velocity</h3>
+                    <p class="text-[11px] text-slate-400 mb-4" id="weekly-chart-subtitle">All time — select a month above to drill in</p>
+                    <div class="relative h-[220px]">
+                        <canvas id="weeklyBarChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- All-Weeks Glance Report (Accordion) -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm">
+                    <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Weekly Glance Report</h3>
+                            <p class="text-[11px] text-slate-400 mt-0.5">All weeks since tracking began — click any week to expand</p>
+                        </div>
+                        <span class="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full" id="glance-weeks-count">0 weeks</span>
+                    </div>
+                    <div id="glance-accordion" class="divide-y divide-slate-50">
+                        <p class="p-6 text-center text-sm text-slate-400">Loading...</p>
+                    </div>
+                </div>
+
+            </div><!-- /p-6 -->
+        </div><!-- end dashboard-view -->
+
     </main>
 </div>
+
 
 
 <!-- Modal Overlay -->

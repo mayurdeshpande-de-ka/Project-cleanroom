@@ -750,10 +750,43 @@ function bindEvents() {
     el.addEventListener('click', e => { e.preventDefault(); handleSideNav(el.dataset.view); });
   });
 
+  // ── Dashboard / Listing Tab Navigation ──────────────────────────────────
+  const navListing   = document.getElementById('nav-listing');
+  const navDashboard = document.getElementById('nav-dashboard');
+  const listingView  = document.getElementById('listing-view');
+  const dashView     = document.getElementById('dashboard-view');
+
+  function showListing() {
+    listingView.classList.remove('hidden'); listingView.classList.add('flex');
+    dashView.classList.add('hidden');       dashView.classList.remove('flex');
+    navListing.classList.add('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
+    navListing.classList.remove('text-slate-500','font-medium');
+    navDashboard.classList.remove('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
+    navDashboard.classList.add('text-slate-500','font-medium');
+  }
+  function showDashboard() {
+    dashView.classList.remove('hidden');    dashView.classList.add('flex');
+    listingView.classList.add('hidden');    listingView.classList.remove('flex');
+    navDashboard.classList.add('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
+    navDashboard.classList.remove('text-slate-500','font-medium');
+    navListing.classList.remove('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
+    navListing.classList.add('text-slate-500','font-medium');
+    loadDashboardStats();
+  }
+  if (navListing)   navListing.addEventListener('click',   showListing);
+  if (navDashboard) navDashboard.addEventListener('click', showDashboard);
+
+  // Month filter & refresh
+  const dashMonthFilter = document.getElementById('dash-month-filter');
+  const dashRefreshBtn  = document.getElementById('dash-refresh-btn');
+  if (dashMonthFilter) dashMonthFilter.addEventListener('change', loadDashboardStats);
+  if (dashRefreshBtn)  dashRefreshBtn.addEventListener('click',   loadDashboardStats);
+
   document.getElementById('nav-retro').addEventListener('click', e => {
     e.preventDefault();
     openRetroModal();
   });
+
 
   document.getElementById('retro-close').addEventListener('click', closeRetroModal);
   document.getElementById('retro-cancel').addEventListener('click', closeRetroModal);
@@ -867,87 +900,194 @@ function bindEvents() {
 
 
 async function loadDashboardStats() {
+    const monthFilter = (document.getElementById('dash-month-filter') || {}).value || '';
     try {
-        const stats = await apiFetch('/api/stats');
-        const glance = await apiFetch('/api/glance_report');
-        
-        // Update Pie Chart
-        const bs = stats.by_status;
+        const [stats, glance] = await Promise.all([
+            apiFetch('/api/stats'),
+            apiFetch('/api/glance_report' + (monthFilter ? '?month=' + monthFilter : ''))
+        ]);
+
+        // ── Populate month dropdown (only on first load) ──────────────────────
+        const sel = document.getElementById('dash-month-filter');
+        if (sel && glance.available_months && sel.options.length <= 1) {
+            glance.available_months.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                const [yr, mo] = m.split('-');
+                opt.textContent = new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                sel.appendChild(opt);
+            });
+        }
+
+        // ── KPI Strip ─────────────────────────────────────────────────────────
+        const allWeekCounts = glance.weekly_counts || {};
+        const allMonthCounts = glance.monthly_counts || {};
+        const totalCompletions = Object.values(allWeekCounts).reduce((a, b) => a + b, 0);
+        const currentWeek = glance.current_week || '';
+        const thisWeekCount = allWeekCounts[currentWeek] || 0;
+        const thisMonthKey = new Date().toISOString().slice(0, 7);
+        const thisMonthCount = allMonthCounts[thisMonthKey] || 0;
+        const weeksActive = Object.keys(allWeekCounts).length;
+
+        const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        setEl('dash-kpi-total',      totalCompletions);
+        setEl('dash-kpi-this-week',  thisWeekCount);
+        setEl('dash-kpi-this-month', thisMonthCount);
+        setEl('dash-kpi-weeks',      weeksActive);
+
+        // ── Status Pie Chart ──────────────────────────────────────────────────
+        const bs = stats.by_status || {};
         const pieData = {
-            labels: ['Downloaded', 'Missing', 'Completed/DB Pushed', 'Pending'],
+            labels: ['Downloaded', 'Missing', 'Completed / DB Pushed', 'Pending', 'Extracted'],
             datasets: [{
                 data: [
                     bs.downloaded || 0,
                     bs.missing || 0,
                     (bs.completed || 0) + (bs.db_pushed || 0),
-                    bs.pending || 0
+                    bs.pending || 0,
+                    bs.extracted || 0
                 ],
-                backgroundColor: ['#6366f1', '#ef4444', '#10b981', '#f59e0b'],
-                borderWidth: 0
+                backgroundColor: ['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#a855f7'],
+                borderWidth: 2,
+                borderColor: '#fff'
             }]
         };
-        
         if (pieChart) {
-            pieChart.data = pieData;
-            pieChart.update();
+            pieChart.data = pieData; pieChart.update();
         } else {
             const ctx = document.getElementById('statusPieChart').getContext('2d');
             pieChart = new Chart(ctx, {
-                type: 'pie',
+                type: 'doughnut',
                 data: pieData,
-                options: { 
-                    responsive: true, 
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'right' } }
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    cutout: '60%',
+                    plugins: { legend: { position: 'right', labels: { font: { size: 11 }, padding: 12, boxWidth: 12 } } }
                 }
             });
         }
-        
-        // Update Bar Chart
-        const weeks = Object.keys(glance.weekly_counts).reverse();
-        const counts = weeks.map(w => glance.weekly_counts[w]);
-        
+
+        // ── Monthly Bar Chart ─────────────────────────────────────────────────
+        const sortedMonths = Object.keys(allMonthCounts).sort();
+        const monthLabels = sortedMonths.map(m => {
+            const [yr, mo] = m.split('-');
+            return new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'short', year: '2-digit' });
+        });
+        const monthData = sortedMonths.map(m => allMonthCounts[m]);
+
+        if (window.monthlyBarChart && window.monthlyBarChart.destroy) {
+            window.monthlyBarChart.destroy(); window.monthlyBarChart = null;
+        }
+        const ctxM = document.getElementById('monthlyBarChart').getContext('2d');
+        window.monthlyBarChart = new Chart(ctxM, {
+            type: 'bar',
+            data: {
+                labels: monthLabels,
+                datasets: [{
+                    label: 'Completions',
+                    data: monthData,
+                    backgroundColor: sortedMonths.map(m => m === thisMonthKey ? '#10b981' : '#6366f180'),
+                    borderColor:     sortedMonths.map(m => m === thisMonthKey ? '#059669' : '#6366f1'),
+                    borderWidth: 1,
+                    borderRadius: 5
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+            }
+        });
+
+        // ── Weekly Velocity Chart ─────────────────────────────────────────────
+        let weekCounts, weekKeys, subtitle;
+        if (monthFilter && Object.keys(glance.weekly_in_month || {}).length > 0) {
+            const wim = glance.weekly_in_month;
+            weekKeys = Object.keys(wim).sort();
+            weekCounts = weekKeys.map(k => wim[k]);
+            subtitle = 'Showing weeks in ' + monthFilter;
+        } else {
+            weekKeys = Object.keys(allWeekCounts).sort();
+            weekCounts = weekKeys.map(k => allWeekCounts[k]);
+            subtitle = monthFilter ? 'No data for selected month' : 'All time — select a month above to drill in';
+        }
+        setEl('weekly-chart-subtitle', subtitle);
+
+        const shortWeek = k => k.slice(5, 10); // MM-DD
         if (barChart) {
-            barChart.data.labels = weeks;
-            barChart.data.datasets[0].data = counts;
+            barChart.data.labels = weekKeys.map(shortWeek);
+            barChart.data.datasets[0].data = weekCounts;
             barChart.update();
         } else {
             const ctx2 = document.getElementById('weeklyBarChart').getContext('2d');
             barChart = new Chart(ctx2, {
                 type: 'bar',
                 data: {
-                    labels: weeks,
+                    labels: weekKeys.map(shortWeek),
                     datasets: [{
                         label: 'Completions',
-                        data: counts,
-                        backgroundColor: '#6366f1',
+                        data: weekCounts,
+                        backgroundColor: '#a5b4fc',
+                        borderColor: '#6366f1',
+                        borderWidth: 1,
                         borderRadius: 4
                     }]
                 },
-                options: { 
-                    responsive: true, 
-                    maintainAspectRatio: false,
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
                     scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
                 }
             });
         }
-        
-        // Update Glance Report
-        document.getElementById('glance-week-label').textContent = glance.recent_week || 'No Data';
-        document.getElementById('glance-total-count').textContent = glance.recent_records ? glance.recent_records.length : 0;
-        
-        const tbody = document.getElementById('glance-tbody');
-        tbody.innerHTML = '';
-        if (glance.recent_records && glance.recent_records.length > 0) {
-            document.getElementById('glance-empty').classList.add('hidden');
-            glance.recent_records.forEach(r => {
-                tbody.innerHTML += `<tr class="border-b border-slate-50"><td class="py-2 px-3">${r.key}</td><td class="py-2 px-3">${r.date}</td></tr>`;
-            });
+
+        // ── All-Weeks Glance Accordion ────────────────────────────────────────
+        const accordion = document.getElementById('glance-accordion');
+        const allWeeks = glance.all_weeks || [];
+        setEl('glance-weeks-count', allWeeks.length + ' week' + (allWeeks.length !== 1 ? 's' : ''));
+
+        if (allWeeks.length === 0) {
+            accordion.innerHTML = '<p class="p-6 text-center text-sm text-slate-400">No data yet. Completions will appear here.</p>';
         } else {
-            document.getElementById('glance-empty').classList.remove('hidden');
+            accordion.innerHTML = allWeeks.map((w, i) => {
+                const isCurrent = w.is_current;
+                const badge = isCurrent
+                    ? '<span class="ml-2 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Current</span>'
+                    : '';
+                const rows = w.records.map(r =>
+                    `<tr class="hover:bg-slate-50"><td class="py-1.5 px-4 text-[12px] font-mono text-slate-700">${r.key}</td><td class="py-1.5 px-4 text-[12px] text-slate-400">${r.date}</td></tr>`
+                ).join('');
+                return `
+                <div class="week-item" id="week-${i}">
+                    <button onclick="toggleWeek(${i})" class="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors text-left">
+                        <span class="text-[12px] font-semibold text-slate-700">
+                            ${w.week}${badge}
+                        </span>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-black ${isCurrent ? 'text-emerald-600' : 'text-indigo-600'}">${w.count}</span>
+                            <span class="material-symbols-outlined text-slate-300 week-chevron-${i}" style="font-size:16px;transition:transform 0.2s">${i === 0 ? 'expand_less' : 'expand_more'}</span>
+                        </div>
+                    </button>
+                    <div id="week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-slate-50">
+                        <table class="w-full">
+                            <thead><tr class="bg-slate-50"><th class="py-1.5 px-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Election Key</th><th class="py-1.5 px-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </div>`;
+            }).join('');
         }
-        
+
     } catch (e) {
-        console.error(e);
+        console.error('loadDashboardStats:', e);
     }
 }
+
+function toggleWeek(i) {
+    const body = document.getElementById('week-body-' + i);
+    const chevron = document.querySelector('.week-chevron-' + i);
+    if (!body) return;
+    const hidden = body.classList.toggle('hidden');
+    if (chevron) chevron.textContent = hidden ? 'expand_more' : 'expand_less';
+}
+
