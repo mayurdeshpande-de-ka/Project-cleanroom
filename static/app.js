@@ -697,14 +697,7 @@ function bindEvents() {
 
   document.getElementById('clear-filters').addEventListener('click', () => {
     Object.assign(filters, { state:'', el_type:'', year:'', status:'', sir_only:false, search:'', show_bp: false });
-    const bpBtn = document.getElementById('toggle-bp-btn');
-    if (bpBtn) {
-        bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
-        bpBtn.className = bpBtn.className
-          .replace('bg-indigo-50', 'bg-white')
-          .replace('text-indigo-700', 'text-slate-500')
-          .replace('border-indigo-200', 'border-slate-200');
-    }
+
     ['filter-state','filter-type','filter-year'].forEach(id => {
       document.getElementById(id).value = '';
     });
@@ -714,14 +707,14 @@ function bindEvents() {
     document.getElementById('global-search').value  = '';
     // Reset KPI active state
     setActiveKpi(null);
-    // Reset BP toggle button to default visual
+    // Reset BP toggle button to default visual (hidden, unhighlighted)
     const bpBtn = document.getElementById('toggle-bp-btn');
     if (bpBtn) {
-      bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt_off</span> Hide BP Years';
+      bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
       bpBtn.className = bpBtn.className
-        .replace('bg-white', 'bg-indigo-600')
-        .replace('text-slate-500', 'text-white')
-        .replace('border-slate-200', 'border-indigo-600');
+        .replace('bg-indigo-50', 'bg-white')
+        .replace('text-indigo-700', 'text-slate-500')
+        .replace('border-indigo-200', 'border-slate-200');
     }
     handleSideNav('all'); // also resets status filter
   });
