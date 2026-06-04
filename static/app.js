@@ -751,61 +751,49 @@ function bindEvents() {
     el.addEventListener('click', e => { e.preventDefault(); handleSideNav(el.dataset.view); });
   });
 
-  // ── Dashboard / Listing Tab Navigation ──────────────────────────────────
-  const navListing   = document.getElementById('nav-listing');
-  const navDashboard = document.getElementById('nav-dashboard');
-  const listingView  = document.getElementById('listing-view');
-  const dashView     = document.getElementById('dashboard-view');
+  // ── Tab Navigation ───────────────────────────────────────────────────────
+  const navTabs = [
+    { id: 'nav-listing', viewId: 'listing-view', setup: () => { loadStats(); loadRecords(); } },
+    { id: 'nav-dashboard', viewId: 'dashboard-view', setup: loadDashboardStats },
+    { id: 'nav-glance', viewId: 'glance-view', setup: loadGlancePanel }
+  ];
 
-  function showListing() {
-    listingView.classList.remove('hidden'); listingView.classList.add('flex');
-    dashView.classList.add('hidden');       dashView.classList.remove('flex');
-    navListing.classList.add('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
-    navListing.classList.remove('text-slate-500','font-medium');
-    navDashboard.classList.remove('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
-    navDashboard.classList.add('text-slate-500','font-medium');
-    // Load listing data lazily
-    loadStats();
-    loadRecords();
+  function switchTab(activeId) {
+    navTabs.forEach(t => {
+      const nav = document.getElementById(t.id);
+      const view = document.getElementById(t.viewId);
+      if (!nav || !view) return;
+      if (t.id === activeId) {
+        view.classList.remove('hidden'); view.classList.add('flex');
+        nav.classList.add('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
+        nav.classList.remove('text-slate-500','font-medium');
+        if(t.setup) t.setup();
+      } else {
+        view.classList.add('hidden'); view.classList.remove('flex');
+        nav.classList.remove('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
+        nav.classList.add('text-slate-500','font-medium');
+      }
+    });
   }
-  function showDashboard() {
-    dashView.classList.remove('hidden');    dashView.classList.add('flex');
-    listingView.classList.add('hidden');    listingView.classList.remove('flex');
-    navDashboard.classList.add('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
-    navDashboard.classList.remove('text-slate-500','font-medium');
-    navListing.classList.remove('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
-    navListing.classList.add('text-slate-500','font-medium');
-    loadDashboardStats();
-  }
-  if (navListing)   navListing.addEventListener('click',   showListing);
-  if (navDashboard) navDashboard.addEventListener('click', showDashboard);
 
-  // Month filter & refresh
+  navTabs.forEach(t => {
+      const el = document.getElementById(t.id);
+      if(el) el.addEventListener('click', () => switchTab(t.id));
+  });
+
+  // Month filter & refresh for Dashboard
   const dashMonthFilter = document.getElementById('dash-month-filter');
   const dashRefreshBtn  = document.getElementById('dash-refresh-btn');
   if (dashMonthFilter) dashMonthFilter.addEventListener('change', loadDashboardStats);
   if (dashRefreshBtn)  dashRefreshBtn.addEventListener('click',   loadDashboardStats);
 
-  // ── Glance Report Panel ─────────────────────────────────────────────────
-  const navGlance    = document.getElementById('nav-glance');
-  const glanceOvl    = document.getElementById('glance-overlay');
-  const glancePanel  = document.getElementById('glance-panel');
-  const glanceClose  = document.getElementById('glance-close');
+  // Filters for Glance
   const glanceMoFil  = document.getElementById('glance-month-filter');
-
-  function openGlancePanel() {
-    if (glanceOvl) glanceOvl.classList.remove('opacity-0','pointer-events-none');
-    if (glancePanel) glancePanel.classList.remove('translate-x-full');
-    loadGlancePanel();
-  }
-  function closeGlancePanel() {
-    if (glanceOvl) glanceOvl.classList.add('opacity-0','pointer-events-none');
-    if (glancePanel) glancePanel.classList.add('translate-x-full');
-  }
-  if (navGlance)   navGlance.addEventListener('click',  openGlancePanel);
-  if (glanceClose) glanceClose.addEventListener('click', closeGlancePanel);
-  if (glanceOvl)   glanceOvl.addEventListener('click', e => { if (e.target === glanceOvl) closeGlancePanel(); });
+  const glanceStFil  = document.getElementById('glance-state-filter');
+  const glanceTyFil  = document.getElementById('glance-type-filter');
   if (glanceMoFil) glanceMoFil.addEventListener('change', loadGlancePanel);
+  if (glanceStFil) glanceStFil.addEventListener('change', loadGlancePanel);
+  if (glanceTyFil) glanceTyFil.addEventListener('change', loadGlancePanel);
 
   document.getElementById('nav-retro').addEventListener('click', e => {
     e.preventDefault();
@@ -1074,19 +1062,46 @@ async function loadDashboardStats() {
 
 async function loadGlancePanel() {
     const monthFilter = (document.getElementById('glance-month-filter') || {}).value || '';
+    const stateFilter = (document.getElementById('glance-state-filter') || {}).value || '';
+    const typeFilter = (document.getElementById('glance-type-filter') || {}).value || '';
     try {
-        const glance = await apiFetch('/api/glance_report' + (monthFilter ? '?month=' + monthFilter : ''));
+        const params = new URLSearchParams();
+        if (monthFilter) params.append('month', monthFilter);
+        if (stateFilter) params.append('state', stateFilter);
+        if (typeFilter) params.append('el_type', typeFilter);
         
-        // Populate month dropdown (only once)
-        const sel = document.getElementById('glance-month-filter');
-        if (sel && glance.available_months && sel.options.length <= 1) {
+        const glance = await apiFetch('/api/glance_report?' + params.toString());
+        
+        // Populate filters if empty
+        const moSel = document.getElementById('glance-month-filter');
+        if (moSel && glance.available_months && moSel.options.length <= 1) {
             glance.available_months.forEach(m => {
                 const opt = document.createElement('option');
                 opt.value = m;
                 const [yr, mo] = m.split('-');
                 opt.textContent = new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
-                sel.appendChild(opt);
+                moSel.appendChild(opt);
             });
+        }
+        
+        // Also grab state/type filters from the main filter dropdows to populate these
+        const stSel = document.getElementById('glance-state-filter');
+        if (stSel && stSel.options.length <= 1) {
+            const mainState = document.getElementById('filter-state');
+            if (mainState && mainState.options) {
+                Array.from(mainState.options).forEach(o => {
+                    if (o.value) stSel.add(new Option(o.text, o.value));
+                });
+            }
+        }
+        const tySel = document.getElementById('glance-type-filter');
+        if (tySel && tySel.options.length <= 1) {
+            const mainType = document.getElementById('filter-type');
+            if (mainType && mainType.options) {
+                Array.from(mainType.options).forEach(o => {
+                    if (o.value) tySel.add(new Option(o.text, o.value));
+                });
+            }
         }
         
         const accordion = document.getElementById('glance-panel-accordion');
@@ -1110,28 +1125,30 @@ async function loadGlancePanel() {
                     : '';
                 const rows = w.records.map(r =>
                     `<tr class="hover:bg-indigo-50/40 transition-colors">
-                        <td class="py-2 px-5 text-[12px] font-mono text-slate-700 font-semibold">${r.key}</td>
-                        <td class="py-2 px-5 text-[12px] text-slate-400">${r.date}</td>
-                        <td class="py-2 px-5"><span class="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full">DB Pushed</span></td>
+                        <td class="py-2 px-6 text-[12px] font-mono text-slate-700 font-semibold">${r.key}</td>
+                        <td class="py-2 px-6 text-[12px] text-slate-400">${r.date}</td>
+                        <td class="py-2 px-6"><span class="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200">DB Pushed</span></td>
                     </tr>`
                 ).join('');
                 return `<div id="panel-week-${i}">
-                    <button onclick="togglePanelWeek(${i})" class="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left group">
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full ${isCurrent ? 'bg-emerald-400' : 'bg-indigo-300'} shrink-0"></span>
-                            <span class="text-[12px] font-semibold text-slate-700">${w.week}${badge}</span>
-                        </div>
+                    <button onclick="togglePanelWeek(${i})" class="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors text-left group border-none">
                         <div class="flex items-center gap-3">
-                            <span class="text-[11px] font-bold ${isCurrent ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-50 text-indigo-600'} px-2.5 py-0.5 rounded-full">${w.count} records</span>
-                            <span class="material-symbols-outlined text-slate-300 group-hover:text-slate-500 panel-week-chevron-${i}" style="font-size:16px;transition:transform 0.2s">${i === 0 ? 'expand_less' : 'expand_more'}</span>
+                            <span class="w-2.5 h-2.5 rounded-full ${isCurrent ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-indigo-300'} shrink-0"></span>
+                            <span class="text-[13px] font-bold text-slate-800">${w.week}${badge}</span>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <span class="text-[11px] font-bold ${isCurrent ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-600 border-slate-200'} border px-3 py-1 rounded-full shadow-sm">${w.count} records</span>
+                            <div class="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-slate-200 transition-colors">
+                                <span class="material-symbols-outlined text-slate-400 group-hover:text-slate-600 panel-week-chevron-${i}" style="font-size:18px;transition:transform 0.2s">${i === 0 ? 'expand_less' : 'expand_more'}</span>
+                            </div>
                         </div>
                     </button>
-                    <div id="panel-week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-slate-50 bg-slate-50/50">
+                    <div id="panel-week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-slate-100 bg-slate-50/30">
                         <table class="w-full">
-                            <thead><tr class="border-b border-slate-100">
-                                <th class="py-2 px-5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Election Key</th>
-                                <th class="py-2 px-5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date Pushed</th>
-                                <th class="py-2 px-5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                            <thead><tr class="border-b border-slate-200 bg-slate-100/50">
+                                <th class="py-2 px-6 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-1/3">Election Key</th>
+                                <th class="py-2 px-6 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-1/3">Date Pushed</th>
+                                <th class="py-2 px-6 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-1/3">Status</th>
                             </tr></thead>
                             <tbody>${rows}</tbody>
                         </table>

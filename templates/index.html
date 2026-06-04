@@ -388,46 +388,67 @@
             </div><!-- /p-5 -->
         </div><!-- end dashboard-view -->
 
+        <!-- ===== GLANCE REPORT VIEW ===== -->
+        <div id="glance-view" class="hidden flex-1 flex-col relative h-full overflow-y-auto custom-scrollbar bg-slate-50/50">
+            <!-- Header -->
+            <div class="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-outlined text-indigo-600 text-[20px]">fact_check</span>
+                    </div>
+                    <div>
+                        <h2 class="text-[18px] font-black tracking-tight text-slate-800">Glance Report</h2>
+                        <p class="text-[12px] font-medium text-slate-500">Weekly DB Pushed records overview</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="p-6">
+                <!-- Filters Bar -->
+                <div class="mb-4 flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex-wrap">
+                    <span class="material-symbols-outlined text-slate-400" style="font-size:18px;">filter_alt</span>
+                    
+                    <div class="flex items-center gap-2">
+                        <label class="text-[11px] font-bold text-slate-500 uppercase">Month</label>
+                        <select id="glance-month-filter" class="h-8 w-36 px-2 text-[12px] font-bold text-slate-700 border border-slate-200 bg-slate-50 rounded outline-none cursor-pointer hover:border-slate-300">
+                            <option value="">All Months</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <label class="text-[11px] font-bold text-slate-500 uppercase">State</label>
+                        <select id="glance-state-filter" class="h-8 w-32 px-2 text-[12px] font-bold text-slate-700 border border-slate-200 bg-slate-50 rounded outline-none cursor-pointer hover:border-slate-300">
+                            <option value="">All States</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <label class="text-[11px] font-bold text-slate-500 uppercase">Type</label>
+                        <select id="glance-type-filter" class="h-8 w-28 px-2 text-[12px] font-bold text-slate-700 border border-slate-200 bg-slate-50 rounded outline-none cursor-pointer hover:border-slate-300">
+                            <option value="">All Types</option>
+                        </select>
+                    </div>
+
+                    <div class="ml-auto">
+                        <span class="text-[12px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full" id="glance-panel-count">— records</span>
+                    </div>
+                </div>
+
+                <!-- Weeks accordion -->
+                <div id="glance-panel-accordion" class="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm divide-y divide-slate-100">
+                    <div class="p-10 text-center flex flex-col items-center gap-3 text-slate-400">
+                        <span class="material-symbols-outlined" style="font-size:36px;">hourglass_empty</span>
+                        <p class="text-sm">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div><!-- end glance-view -->
+
     </main>
 </div>
 
-<!-- ===== GLANCE REPORT MODAL ===== -->
-<div id="glance-overlay" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[150] flex items-start justify-end opacity-0 pointer-events-none transition-opacity duration-300">
-    <div id="glance-panel" class="h-full w-[560px] max-w-[95vw] bg-white shadow-2xl flex flex-col translate-x-full transition-transform duration-300">
 
-        <!-- Panel Header -->
-        <div class="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center justify-between shrink-0">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center">
-                    <span class="material-symbols-outlined text-indigo-300" style="font-size:18px;">fact_check</span>
-                </div>
-                <div>
-                    <h2 class="text-[14px] font-bold text-white">Weekly Glance Report</h2>
-                    <p class="text-[11px] text-slate-400">DB Pushed records — week-wise</p>
-                </div>
-            </div>
-            <button id="glance-close" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors text-slate-400 hover:text-white">
-                <span class="material-symbols-outlined" style="font-size:18px;">close</span>
-            </button>
-        </div>
-
-        <!-- Month filter strip -->
-        <div class="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2 shrink-0">
-            <span class="material-symbols-outlined text-slate-400" style="font-size:14px;">calendar_month</span>
-            <select id="glance-month-filter" class="flex-1 h-7 px-2 text-[11px] font-medium text-slate-600 border border-slate-200 bg-white rounded-lg outline-none cursor-pointer">
-                <option value="">All Weeks (All Time)</option>
-            </select>
-            <span class="text-[11px] font-bold bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full" id="glance-panel-count">— records</span>
-        </div>
-
-        <!-- Weeks accordion -->
-        <div id="glance-panel-accordion" class="flex-1 overflow-y-auto divide-y divide-slate-100">
-            <div class="p-10 text-center flex flex-col items-center gap-3 text-slate-400">
-                <span class="material-symbols-outlined" style="font-size:36px;">hourglass_empty</span>
-                <p class="text-sm">Loading...</p>
-            </div>
-        </div>
-    </div>
 </div>
 
 
