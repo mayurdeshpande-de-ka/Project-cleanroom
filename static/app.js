@@ -1,43 +1,54 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   app.js — Form 20 Backlog Dashboard (Tailwind Dense View)
+   app.js — Form 20 Backlog Dashboard
    ═══════════════════════════════════════════════════════════════════════════ */
 'use strict';
 
-let allRecords   = [];
-let selectedIds  = new Set();
-let sortCol      = 'state';
-let sortDir      = 'asc';
-let editingId    = null;
-let toastTimer   = null;
-let searchTimer  = null;
+let allRecords    = [];
+let selectedIds   = new Set();
+let sortCol       = 'state';
+let sortDir       = 'asc';
+let editingId     = null;
+let toastTimer    = null;
+let searchTimer   = null;
 let retroMetadata = null;
 let filterMetadata = null;
 let confirmResolve = null;
-let currentView = 'states'; 
+let currentView   = 'states';
 let currentDetailState = null;
 
 const filters = {
   state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false, show_bp: false,
 };
 
-let activeKpi = null;
-let pieChart = null;
-let barChart = null; // tracks which KPI card is active
+let activeKpi  = null;
+let pieChart   = null;
+let barChart   = null;
+
+// Dashboard-only filters (BP hidden by default)
+let dashShowBp  = false;
+let dashSirOnly = false;
+
+let monthlyChart = null;
+
+// Glance Report chart instances
+let gWeekChart  = null;
+let gStateChart = null;
+
+const EL_TYPE_NAMES = { AE: 'Assembly', GE: 'General', BE: 'Bypoll', PE: 'Parliament', LE: 'Local', AC: 'Assembly' };
+const STATE_NAMES_MAP = {};  // populated lazily from filter dropdown
 
 const STATUS_CONFIG = {
-  'missing':    { bg: 'bg-slate-50',   text: 'text-slate-700',   border: 'border-slate-200',  dot: 'bg-slate-500',   label: 'Missing' },
-  'pending':    { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-100',  dot: 'bg-amber-500',   label: 'Pending' },
-  'downloaded': { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-100',   dot: 'bg-blue-500',    label: 'Downloaded' },
-  'extracted':  { bg: 'bg-purple-50',  text: 'text-purple-700',  border: 'border-purple-100', dot: 'bg-purple-500',  label: 'Extracted' },
-  'completed':  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100',dot: 'bg-emerald-500', label: 'Completed' },
-  'db_pushed':  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100',dot: 'bg-emerald-500', label: 'DB Pushed' },
+  'missing':    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-100',     dot: 'bg-red-400',     label: 'Missing'   },
+  'pending':    { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-100',   dot: 'bg-amber-400',   label: 'Pending'   },
+  'downloaded': { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-100',    dot: 'bg-blue-400',    label: 'Downloaded'},
+  'extracted':  { bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-100',  dot: 'bg-violet-400',  label: 'Extracted' },
+  'completed':  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400', label: 'Completed' },
+  'db_pushed':  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400', label: 'DB Pushed' },
 };
 
 document.addEventListener('DOMContentLoaded', () => {
   loadFilters();
-  // Dashboard is the default opening view
   loadDashboardStats();
-  // Listing data loads lazily when user navigates to it
   bindEvents();
 });
 
@@ -46,21 +57,19 @@ async function loadFilters() {
     const data = await apiFetch('/api/filters');
     filterMetadata = data.metadata;
     const stateNames = data.state_names;
-    
+
     const stateEl = document.getElementById('filter-state');
     stateEl.innerHTML = '<option value="">All States</option>';
     Object.keys(filterMetadata).sort().forEach(s => {
       stateEl.appendChild(new Option(`${s} — ${stateNames[s]}`, s));
     });
-    
+
     document.getElementById('filter-type').innerHTML = '<option value="">All Types</option>';
     document.getElementById('filter-type').disabled = true;
     document.getElementById('filter-year').innerHTML = '<option value="">All Years</option>';
     document.getElementById('filter-year').disabled = true;
   } catch (e) { console.error('loadFilters:', e); }
 }
-
-// Previous loadRetroFilters removed
 
 async function loadStats() {
   const params = new URLSearchParams();
@@ -78,7 +87,7 @@ async function loadStats() {
     const bs = s.by_status || {};
     const total = s.total || 0;
 
-    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '0'; };
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val ?? '0'; };
     set('sl-all-count', total);
     set('sl-dl-count',  bs.downloaded || '0');
     set('sl-ex-count',  bs.extracted  || '0');
@@ -87,16 +96,19 @@ async function loadStats() {
     set('sl-mi-count',  bs.missing    || '0');
     set('sl-wip-count', s.wip_count   || '0');
 
-    // KPI Cards
     set('kpi-dl-count', bs.downloaded || '0');
     set('kpi-ex-count', bs.extracted  || '0');
     set('kpi-mi-count', bs.missing    || '0');
 
-    // Progress bar
     const completed = (bs.db_pushed || 0) + (bs.completed || 0);
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-    document.getElementById('progress-bar-fill').style.width = `${pct}%`;
-    document.getElementById('progress-text').textContent = `${completed} / ${total} Completed`;
+
+    const pbFill = document.getElementById('progress-bar-fill');
+    if (pbFill) pbFill.style.width = pct + '%';
+    set('progress-text', `${completed} / ${total} completed`);
+
+    const pctSidebar = document.getElementById('progress-pct-sidebar');
+    if (pctSidebar) pctSidebar.textContent = pct + '%';
   } catch (e) { console.error('loadStats:', e); }
 }
 
@@ -116,224 +128,213 @@ async function loadRecords() {
     renderTable();
   } catch (e) {
     document.getElementById('table-body').innerHTML =
-      `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-500 text-[13px]">Failed to load — ${e.message}</td></tr>`;
+      `<tr><td colspan="7" class="px-5 py-10 text-center text-gray-500 text-[12px]">Failed to load — ${e.message}</td></tr>`;
   }
 }
 
 function renderTable() {
   const tbody = document.getElementById('table-body');
   const thead = document.getElementById('table-head');
-  document.getElementById('record-count-badge').textContent = `${allRecords.length} Total Records`;
-  
+  document.getElementById('record-count-badge').textContent = `${allRecords.length} records`;
+
   if (!allRecords.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-500 text-[13px]">No records match the current filters.</td></tr>`;
-    document.getElementById('pagination-text').textContent = `Showing 0 records`;
-    updateSelectAll(); return;
+    tbody.innerHTML = `
+      <tr><td colspan="7" class="px-5 py-12 text-center">
+        <div class="flex flex-col items-center gap-2 text-gray-400">
+          <span class="material-symbols-outlined" style="font-size:28px;">search_off</span>
+          <p class="text-[12px]">No records match the current filters.</p>
+        </div>
+      </td></tr>`;
+    document.getElementById('pagination-text').textContent = 'Showing 0 records';
+    return;
   }
 
   if (currentView === 'states') {
-      // Group by state
-      const grouped = {};
-      allRecords.forEach(rec => {
-        const s = rec.state_name || rec.state;
-        if (!grouped[s]) grouped[s] = [];
-        grouped[s].push(rec);
+    // ── State grouped view ──────────────────────────────────────────────────
+    const grouped = {};
+    allRecords.forEach(rec => {
+      const s = rec.state_name || rec.state;
+      if (!grouped[s]) grouped[s] = [];
+      grouped[s].push(rec);
+    });
+    const stateKeys = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+
+    document.getElementById('pagination-text').textContent =
+      `${allRecords.length} records across ${stateKeys.length} states`;
+
+    thead.innerHTML = `
+      <tr>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">State</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Elections</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Status Breakdown</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Open</th>
+      </tr>`;
+
+    let html = '';
+    stateKeys.forEach(s => {
+      const records = grouped[s];
+      let missing = 0, extracted = 0, downloaded = 0, pending = 0;
+      records.forEach(r => {
+        const st = r.overall_status;
+        if (st === 'missing')    missing++;
+        else if (st === 'extracted')  extracted++;
+        else if (st === 'downloaded') downloaded++;
+        else if (st === 'pending')    pending++;
       });
 
-      const stateKeys = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-      document.getElementById('pagination-text').textContent = `Showing ${allRecords.length} records across ${stateKeys.length} states`;
+      const chips = [
+        extracted  > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-violet-50 text-violet-700 border border-violet-100 px-2 py-0.5 rounded-full">${extracted} Ext</span>` : '',
+        downloaded > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full">${downloaded} Dwn</span>` : '',
+        pending    > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded-full">${pending} Pnd</span>` : '',
+        missing    > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-gray-100 text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full">${missing} Mis</span>` : '',
+      ].filter(Boolean).join('');
 
-      // Render State View Headers
-      thead.innerHTML = `
-        <tr>
-            <th class="px-6 py-3 w-10"></th>
-            <th class="px-2 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">State Name</th>
-            <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Elections</th>
-            <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status Breakdown</th>
-            <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
-        </tr>
-      `;
-
-      let html = '';
-      stateKeys.forEach(s => {
-        const records = grouped[s];
-        
-        // Count statuses
-        let missing = 0, extracted = 0, downloaded = 0;
-        records.forEach(r => {
-            if (r.overall_status === 'missing') missing++;
-            else if (r.overall_status === 'extracted') extracted++;
-            else if (r.overall_status === 'downloaded') downloaded++;
-        });
-
-        html += `
-        <tr class="bg-white hover:bg-slate-50 cursor-pointer border-b border-slate-100 transition-colors" onclick="openStateDetail('${s.replace(/'/g, "\\'")}')">
-          <td class="px-6 py-3">
-            <div class="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center">
-                <span class="material-symbols-outlined text-[16px] text-indigo-500">map</span>
+      html += `
+        <tr class="trow bg-white border-b border-gray-50 cursor-pointer transition-colors"
+            onclick="openStateDetail('${s.replace(/'/g, "\\'")}')">
+          <td class="px-5 py-3">
+            <div class="flex items-center gap-3">
+              <div class="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">map</span>
+              </div>
+              <div>
+                <p class="text-[13px] font-semibold text-gray-900">${x(s)}</p>
+                <p class="text-[11px] text-gray-400">Click to view elections</p>
+              </div>
             </div>
           </td>
-          <td class="px-2 py-3">
-            <span class="font-bold text-slate-800 text-[13px] block">${x(s)}</span>
-            <span class="text-[11px] text-slate-400">Click to view records</span>
+          <td class="px-5 py-3">
+            <span class="text-[13px] font-semibold text-gray-700 tabular-nums">${records.length}</span>
+            <span class="text-[11px] text-gray-400 ml-1">elections</span>
           </td>
-          <td class="px-6 py-3">
-            <span class="text-[13px] font-semibold text-slate-700">${records.length}</span>
+          <td class="px-5 py-3">
+            <div class="flex items-center gap-1.5 flex-wrap">${chips || '<span class="text-[11px] text-gray-300">—</span>'}</div>
           </td>
-          <td class="px-6 py-3">
-            <div class="flex items-center gap-2 text-[11px] font-medium">
-                ${extracted > 0 ? `<span class="text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">${extracted} Ext</span>` : ''}
-                ${downloaded > 0 ? `<span class="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">${downloaded} Dwn</span>` : ''}
-                ${missing > 0 ? `<span class="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">${missing} Mis</span>` : ''}
-            </div>
+          <td class="px-5 py-3 text-right">
+            <span class="material-symbols-outlined text-gray-300" style="font-size:16px;">chevron_right</span>
           </td>
-          <td class="px-6 py-3 text-right">
-             <span class="material-symbols-outlined text-slate-300">chevron_right</span>
-          </td>
-        </tr>
-        `;
-      });
-      tbody.innerHTML = html;
-      updateSelectAll();
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+
   } else {
-      // Detail View
-      const records = allRecords.filter(r => (r.state_name || r.state) === currentDetailState).sort((a, b) => {
+    // ── Detail view (records for a single state) ───────────────────────────
+    const records = allRecords
+      .filter(r => (r.state_name || r.state) === currentDetailState)
+      .sort((a, b) => {
         let va = a[sortCol] ?? '', vb = b[sortCol] ?? '';
-        if (typeof va === 'string') va = va.toLowerCase();
-        if (typeof vb === 'string') vb = vb.toLowerCase();
+        if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
         if (va < vb) return sortDir === 'asc' ? -1 : 1;
         if (va > vb) return sortDir === 'asc' ?  1 : -1;
         return 0;
       });
 
-      document.getElementById('pagination-text').textContent = `Showing 1-${records.length} of ${records.length} records for ${currentDetailState}`;
+    document.getElementById('pagination-text').textContent =
+      `${records.length} records for ${currentDetailState}`;
 
-      // Render Detail View Headers
-      thead.innerHTML = `
-        <tr>
-            <th class="px-2 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider sortable cursor-pointer hover:bg-slate-50" data-col="state">Record ID</th>
-            <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
-            <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Location Details</th>
-            <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
-        </tr>
-      `;
+    thead.innerHTML = `
+      <tr>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="state">Record ID</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Location</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Actions</th>
+      </tr>`;
 
-      tbody.innerHTML = records.map(rec => {
-        const sel = selectedIds.has(rec.id);
-        const cfg = STATUS_CONFIG[rec.overall_status] || STATUS_CONFIG['missing'];
-        const rowClass = sel ? 'selected-row' : 'table-row-hover';
+    tbody.innerHTML = records.map(rec => {
+      const sel = selectedIds.has(rec.id);
+      const cfg = STATUS_CONFIG[rec.overall_status] || STATUS_CONFIG['missing'];
+      const rowClass = sel ? 'trow-selected' : 'trow';
 
-        return `
-        <tr class="${rowClass} transition-colors border-b border-slate-50" data-id="${rec.id}">
-            <td class="px-2 py-2 cursor-pointer" onclick="openModal(${rec.id})">
-            <div class="flex flex-col">
-                <span class="text-[12.5px] font-bold text-slate-900 leading-tight">${x(rec.key)}</span>
-                <span class="text-[11px] ${rec.is_sir_state ? 'text-amber-600 font-semibold' : 'text-slate-500'}">${rec.is_sir_state ? 'SIR Priority' : 'Standard Record'}</span>
-            </div>
-            </td>
-            <td class="px-6 py-2">
-            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${cfg.bg} ${cfg.text} border ${cfg.border} flex items-center w-fit gap-1.5">
-                <span class="w-1.5 h-1.5 rounded-full ${cfg.dot}"></span>
-                ${cfg.label}
+      return `
+        <tr class="${rowClass} bg-white border-b border-gray-50 transition-colors" data-id="${rec.id}">
+          <td class="px-5 py-2.5 cursor-pointer" onclick="openModal(${rec.id})">
+            <p class="text-[12.5px] font-semibold text-gray-900 leading-tight">${x(rec.key)}</p>
+            <p class="text-[11px] ${rec.is_sir_state ? 'text-amber-600 font-medium' : 'text-gray-400'} mt-0.5">${rec.is_sir_state ? 'SIR Priority' : 'Standard'}</p>
+          </td>
+          <td class="px-5 py-2.5">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg} ${cfg.text} ${cfg.border}">
+              <span class="w-1.5 h-1.5 rounded-full ${cfg.dot} shrink-0"></span>
+              ${cfg.label}
             </span>
-            </td>
-            <td class="px-6 py-2">
-            <div class="flex flex-col">
-                <span class="text-[12.5px] text-slate-700 font-medium">${x(rec.state_name || rec.state)}</span>
-                <span class="text-[11px] text-slate-400">${x(rec.el_type)} ${rec.el_year}</span>
+          </td>
+          <td class="px-5 py-2.5">
+            <p class="text-[12.5px] font-medium text-gray-700">${x(rec.state_name || rec.state)}</p>
+            <p class="text-[11px] text-gray-400">${x(rec.el_type)} ${rec.el_year}</p>
+          </td>
+          <td class="px-5 py-2.5 text-right">
+            <div class="flex items-center justify-end gap-1.5">
+              <button class="btn-wip flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-colors
+                ${rec.wip
+                  ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
+                  : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50 hover:text-gray-600'}"
+                data-id="${rec.id}" title="Toggle LF In Progress">
+                <span class="material-symbols-outlined" style="font-size:13px;">${rec.wip ? 'hourglass_top' : 'hourglass_empty'}</span>
+                LF WIP
+              </button>
+              <button class="btn-edit p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-700 transition-colors" data-id="${rec.id}">
+                <span class="material-symbols-outlined" style="font-size:15px;">edit</span>
+              </button>
             </div>
-            </td>
-            <td class="px-6 py-2 text-right">
-            <div class="flex items-center justify-end gap-2">
-                <button class="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold border transition-colors btn-wip ${rec.wip ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:text-slate-600'}" data-id="${rec.id}" title="Toggle LF In Progress">
-                    <span class="material-symbols-outlined text-[14px]">${rec.wip ? 'hourglass_top' : 'hourglass_empty'}</span>
-                    LF WIP
-                </button>
-                <button class="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-700 transition-colors btn-edit" data-id="${rec.id}">
-                <span class="material-symbols-outlined" style="font-size: 16px;">edit</span>
-                </button>
-            </div>
-            </td>
+          </td>
         </tr>`;
-      }).join('');
+    }).join('');
 
-      tbody.querySelectorAll('.btn-wip').forEach(btn => {
-        btn.addEventListener('click', async e => {
-          e.stopPropagation();
-          const id = +e.currentTarget.dataset.id;
-          const rec = allRecords.find(r => r.id === id);
-          if (!rec) return;
-          try {
-            const updated = await apiFetch(`/api/records/${id}`, 'PATCH', { wip: rec.wip ? 0 : 1 });
-            const idx = allRecords.findIndex(r => r.id === id);
-            if (idx >= 0) allRecords[idx] = updated;
-            renderTable(); loadStats();
-          } catch(err) {
-             showToast('Failed to update WIP status', true);
-          }
-        });
+    tbody.querySelectorAll('.btn-wip').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const id = +e.currentTarget.dataset.id;
+        const rec = allRecords.find(r => r.id === id);
+        if (!rec) return;
+        try {
+          const updated = await apiFetch(`/api/records/${id}`, 'PATCH', { wip: rec.wip ? 0 : 1 });
+          const idx = allRecords.findIndex(r => r.id === id);
+          if (idx >= 0) allRecords[idx] = updated;
+          renderTable(); loadStats();
+        } catch (err) {
+          showToast('Failed to update WIP status', true);
+        }
       });
+    });
 
-      tbody.querySelectorAll('.btn-edit').forEach(btn => {
-        btn.addEventListener('click', e => {
-          e.stopPropagation();
-          openModal(+e.currentTarget.dataset.id);
-        });
+    tbody.querySelectorAll('.btn-edit').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openModal(+e.currentTarget.dataset.id);
       });
+    });
 
-      // Re-bind sort headers for Detail view
-      thead.querySelectorAll('.sortable').forEach(th => {
-        th.addEventListener('click', () => {
-          const c = th.dataset.col;
-          if (sortCol === c) {
-            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-          } else {
-            sortCol = c;
-            sortDir = 'asc';
-          }
-          renderTable();
-        });
+    thead.querySelectorAll('.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const c = th.dataset.col;
+        sortDir = sortCol === c && sortDir === 'asc' ? 'desc' : 'asc';
+        sortCol = c;
+        renderTable();
       });
-
-      // Bind select all for Detail view
-      const selectAllBtn = document.getElementById('select-all');
-      if (selectAllBtn) {
-        selectAllBtn.addEventListener('change', e => {
-            records.forEach(r => {
-                e.target.checked ? selectedIds.add(r.id) : selectedIds.delete(r.id);
-            });
-            renderTable();
-            updateSelBar();
-        });
-      }
-
-      // updateSelectAll();
+    });
   }
 }
 
-window.goBackToStates = function() {
-    currentView = 'states';
-    currentDetailState = null;
-    document.getElementById('detail-header').classList.add('hidden');
-    renderTable();
-}
+window.goBackToStates = function () {
+  currentView = 'states';
+  currentDetailState = null;
+  document.getElementById('detail-header').classList.add('hidden');
+  renderTable();
+};
 
-window.openStateDetail = function(stateName) {
-    currentView = 'detail';
-    currentDetailState = stateName;
-    document.getElementById('detail-header').classList.remove('hidden');
-    document.getElementById('detail-state-name').textContent = stateName;
-    
-    // Auto-select records? No, we maintain existing selection.
-    renderTable();
-}
+window.openStateDetail = function (stateName) {
+  currentView = 'detail';
+  currentDetailState = stateName;
+  document.getElementById('detail-header').classList.remove('hidden');
+  document.getElementById('detail-state-name').textContent = stateName;
+  renderTable();
+};
 
 function x(str) {
-  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function updateSelectAll() {
-  const cb   = document.getElementById('select-all');
+  const cb = document.getElementById('select-all');
   if (!cb) return;
   const ids  = allRecords.map(r => r.id);
   const selN = ids.filter(id => selectedIds.has(id)).length;
@@ -342,51 +343,40 @@ function updateSelectAll() {
 }
 
 function updateSelBar() {}
-
-function clearSelection() {
-  selectedIds.clear();
-  renderTable();
-}
+function clearSelection() { selectedIds.clear(); renderTable(); }
 
 function openModal(id) {
   const rec = allRecords.find(r => r.id === id);
   if (!rec) return;
   editingId = id;
   document.getElementById('modal-title').textContent = `${rec.state} — ${rec.el_type} — ${rec.el_year}`;
-  document.getElementById('modal-key').textContent = rec.key;
-  document.getElementById('edit-status').value = rec.overall_status || 'missing';
-  document.getElementById('edit-remark').value = rec.remark || '';
-  
+  document.getElementById('modal-key').textContent   = rec.key;
+  document.getElementById('edit-status').value       = rec.overall_status || 'missing';
+  document.getElementById('edit-remark').value       = rec.remark || '';
   const overlay = document.getElementById('overlay');
-  const card = document.getElementById('modal-card');
+  const card    = document.getElementById('modal-card');
   overlay.classList.remove('opacity-0', 'pointer-events-none');
-  card.classList.remove('scale-95');
-  card.classList.add('scale-100');
+  card.classList.remove('scale-95'); card.classList.add('scale-100');
 }
 
 function closeModal() {
   const overlay = document.getElementById('overlay');
-  const card = document.getElementById('modal-card');
+  const card    = document.getElementById('modal-card');
   overlay.classList.add('opacity-0', 'pointer-events-none');
-  card.classList.remove('scale-100');
-  card.classList.add('scale-95');
+  card.classList.remove('scale-100'); card.classList.add('scale-95');
   editingId = null;
 }
 
 async function saveModal() {
   if (!editingId) return;
   const newStatus = document.getElementById('edit-status').value;
-  
   if (newStatus === 'db_pushed') {
-      const confirmed = await showConfirmModal();
-      if (!confirmed) {
-          return;
-      }
+    const confirmed = await showConfirmModal();
+    if (!confirmed) return;
   }
-
   const body = {
     overall_status: newStatus,
-    remark:         document.getElementById('edit-remark').value.trim()   || null,
+    remark: document.getElementById('edit-remark').value.trim() || null,
   };
   try {
     const updated = await apiFetch(`/api/records/${editingId}`, 'PATCH', body);
@@ -399,93 +389,69 @@ async function saveModal() {
 
 async function syncFromExcel() {
   const btn = document.getElementById('reload-btn');
+  if (!btn) return;
   btn.disabled = true;
-  btn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size: 16px;">sync</span> Syncing...';
   try {
     const data = await apiFetch('/api/reload', 'POST', {});
     if (data.success) { showToast('Database synced from Excel'); loadStats(); loadRecords(); }
     else showToast('Sync failed: ' + data.error, true);
   } catch (e) { showToast('Sync error: ' + e.message, true); }
-  finally {
-    btn.disabled = false;
-    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;">sync</span> Sync';
-  }
+  finally { btn.disabled = false; }
 }
 
 async function syncAWS() {
   const btn = document.getElementById('sync-aws-btn');
+  if (!btn) return;
   btn.disabled = true;
-  btn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size: 16px;">sync</span> Syncing...';
   try {
     const data = await apiFetch('/api/sync-rds', 'POST', {});
     if (data.success) { showToast(data.message); loadStats(); loadRecords(); }
     else showToast('AWS Sync failed: ' + data.message, true);
   } catch (e) { showToast('AWS Sync error: ' + e.message, true); }
-  finally {
-    btn.disabled = false;
-    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;">cloud_sync</span> Sync AWS';
-  }
+  finally { btn.disabled = false; }
 }
-
 
 function handleSideNav(view) {
   document.querySelectorAll('.sidelink').forEach(el => {
-    const isAct = el.dataset.view === view;
-    if (el.dataset.view === 'wip') {
-      if (isAct) {
-        el.classList.add('bg-amber-50', 'dark:bg-slate-800', 'text-amber-700', 'border-amber-500');
-        el.classList.remove('text-slate-500', 'dark:text-slate-400', 'border-transparent');
+    el.classList.remove('sl-active', 'sl-wip-active');
+    el.classList.remove('text-gray-900', 'text-amber-900');
+
+    if (el.dataset.view === view) {
+      if (view === 'wip') {
+        el.classList.add('sl-wip-active');
       } else {
-        el.classList.remove('bg-amber-50', 'dark:bg-slate-800', 'text-amber-700', 'border-amber-500');
-        el.classList.add('text-slate-500', 'dark:text-slate-400', 'border-transparent');
-      }
-    } else {
-      if (isAct) {
-        el.classList.add('bg-slate-100', 'dark:bg-slate-800', 'text-slate-900', 'dark:text-white', 'font-bold', 'border-slate-800', 'dark:border-slate-400');
-        el.classList.remove('text-slate-500', 'dark:text-slate-400', 'border-transparent');
-        if (el.querySelector('.material-symbols-outlined')) el.querySelector('.material-symbols-outlined').classList.add('text-slate-800', 'dark:text-white');
-      } else {
-        el.classList.remove('bg-slate-100', 'dark:bg-slate-800', 'text-slate-900', 'dark:text-white', 'font-bold', 'border-slate-800', 'dark:border-slate-400');
-        el.classList.add('text-slate-500', 'dark:text-slate-400', 'border-transparent');
-        if (el.querySelector('.material-symbols-outlined')) el.querySelector('.material-symbols-outlined').classList.remove('text-slate-800', 'dark:text-white');
+        el.classList.add('sl-active');
       }
     }
   });
 
-  const statusMap = { downloaded:'downloaded', extracted:'extracted', completed:'completed', pending:'pending', missing:'missing' };
+  const statusMap = { downloaded: 'downloaded', extracted: 'extracted', completed: 'completed', pending: 'pending', missing: 'missing' };
   if (statusMap[view]) {
-    filters.status   = statusMap[view];
-    filters.wip      = false;
+    filters.status = statusMap[view];
+    filters.wip    = false;
   } else if (view === 'wip') {
-    filters.status   = '';
-    filters.wip      = true;
+    filters.status = '';
+    filters.wip    = true;
   } else {
-    filters.status   = '';
-    filters.wip      = false;
+    filters.status = '';
+    filters.wip    = false;
   }
-  // Reset KPI active state when side nav changes
   setActiveKpi(null);
   loadStats(); loadRecords();
 }
 
-// KPI Card click handler
-window.handleKpiClick = function(status) {
+window.handleKpiClick = function (status) {
   if (activeKpi === status) {
-    // Clicking active KPI deselects it → show all
     setActiveKpi(null);
     filters.status = '';
-    filters.wip = false;
+    filters.wip    = false;
   } else {
     setActiveKpi(status);
     filters.status = status;
-    filters.wip = false;
-    // Reset side nav to 'all' visually
-    handleSideNav.__noKpiReset = true;
+    filters.wip    = false;
     document.querySelectorAll('.sidelink').forEach(el => {
-      el.classList.remove('bg-slate-100', 'text-slate-900', 'font-bold', 'border-slate-800');
-      el.classList.add('text-slate-500', 'border-transparent');
+      el.classList.remove('sl-active', 'sl-wip-active');
     });
-    handleSideNav.__noKpiReset = false;
   }
   goBackToStates();
   loadRecords();
@@ -494,39 +460,48 @@ window.handleKpiClick = function(status) {
 function setActiveKpi(status) {
   activeKpi = status;
   const kpiMap = {
-    downloaded: { id: 'kpi-downloaded', ring: 'ring-blue-400',   border: 'border-blue-400',   text: 'text-blue-700'   },
-    extracted:  { id: 'kpi-extracted',  ring: 'ring-purple-400', border: 'border-purple-400', text: 'text-purple-700' },
-    missing:    { id: 'kpi-missing',    ring: 'ring-red-400',    border: 'border-red-400',    text: 'text-red-700'    },
+    downloaded: { id: 'kpi-downloaded', cls: 'kpi-active-blue'   },
+    extracted:  { id: 'kpi-extracted',  cls: 'kpi-active-violet' },
+    missing:    { id: 'kpi-missing',    cls: 'kpi-active-red'    },
   };
-  ['downloaded','extracted','missing'].forEach(s => {
+  ['downloaded', 'extracted', 'missing'].forEach(s => {
     const cfg = kpiMap[s];
     const btn = document.getElementById(cfg.id);
     if (!btn) return;
     if (s === status) {
-      btn.classList.add('ring-2', cfg.ring, cfg.border, cfg.text);
-      btn.classList.remove('border-slate-200');
+      btn.classList.add(cfg.cls);
     } else {
-      btn.classList.remove('ring-2', cfg.ring, cfg.border, cfg.text);
-      btn.classList.add('border-slate-200');
+      btn.classList.remove('kpi-active-blue', 'kpi-active-violet', 'kpi-active-red');
     }
   });
+}
+
+function setDashToggle(btn, active, icon, label, color) {
+  // color: 'amber' | 'indigo'
+  const palette = {
+    amber:  { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  iconOn: 'text-amber-500'  },
+    indigo: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', iconOn: 'text-indigo-500' },
+  }[color];
+  const iconCls = active ? palette.iconOn : 'text-gray-400';
+  btn.innerHTML = `<span class="material-symbols-outlined ${iconCls}" style="font-size:13px;">${icon}</span> ${label}`;
+  if (active) {
+    btn.classList.remove('bg-white', 'text-gray-500', 'border-gray-200');
+    btn.classList.add(palette.bg, palette.text, palette.border);
+  } else {
+    btn.classList.remove(palette.bg, palette.text, palette.border);
+    btn.classList.add('bg-white', 'text-gray-500', 'border-gray-200');
+  }
 }
 
 function showToast(msg, isErr = false) {
   const el = document.getElementById('toast');
   el.textContent = msg;
-  if (isErr) {
-    el.classList.remove('bg-slate-900');
-    el.classList.add('bg-red-600');
-  } else {
-    el.classList.remove('bg-red-600');
-    el.classList.add('bg-slate-900');
-  }
-  el.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
-  
+  el.className = el.className.replace(/bg-\w+-\d+/g, '');
+  el.classList.add(isErr ? 'bg-red-600' : 'bg-gray-900');
+  el.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { 
-    el.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+  toastTimer = setTimeout(() => {
+    el.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
   }, 3000);
 }
 
@@ -545,32 +520,27 @@ function openRetroModal() {
   document.getElementById('retro-overlay').classList.remove('opacity-0', 'pointer-events-none');
   document.getElementById('retro-card').classList.remove('scale-95');
   document.getElementById('retro-card').classList.add('scale-100');
-  
+
   (async () => {
     if (!retroMetadata) {
-        try {
-            retroMetadata = await apiFetch('/api/retro/metadata');
-        } catch (e) {
-            showToast('Failed to load retro metadata', true);
-            return;
-        }
+      try {
+        retroMetadata = await apiFetch('/api/retro/metadata');
+      } catch (e) {
+        showToast('Failed to load retro metadata', true); return;
+      }
     }
-    
-    const stateEl = document.getElementById('retro-state');
+    const stateEl  = document.getElementById('retro-state');
     const currState = stateEl.value;
     stateEl.innerHTML = '<option value="">All States</option>';
-    Object.keys(retroMetadata).sort().forEach(s => {
-        stateEl.appendChild(new Option(s, s));
-    });
+    Object.keys(retroMetadata).sort().forEach(s => stateEl.appendChild(new Option(s, s)));
     if (currState && retroMetadata[currState]) {
-        stateEl.value = currState;
+      stateEl.value = currState;
     } else {
-        document.getElementById('retro-type').innerHTML = '<option value="">All Types</option>';
-        document.getElementById('retro-type').disabled = true;
-        document.getElementById('retro-year').innerHTML = '<option value="">All Years</option>';
-        document.getElementById('retro-year').disabled = true;
+      document.getElementById('retro-type').innerHTML = '<option value="">All Types</option>';
+      document.getElementById('retro-type').disabled  = true;
+      document.getElementById('retro-year').innerHTML = '<option value="">All Years</option>';
+      document.getElementById('retro-year').disabled  = true;
     }
-    
     updateRetroCountLocal();
   })();
 }
@@ -582,116 +552,91 @@ function closeRetroModal() {
 }
 
 function updateRetroCountLocal() {
-    if (!retroMetadata) return;
-    const s = document.getElementById('retro-state').value;
-    const t = document.getElementById('retro-type').value;
-    const y = document.getElementById('retro-year').value;
-    
-    let count = 0;
-    if (s && t && y) {
-        count = retroMetadata[s]?.[t]?.[y] || 0;
-    } else if (s && t) {
-        Object.values(retroMetadata[s]?.[t] || {}).forEach(c => count += c);
-    } else if (s) {
-        Object.values(retroMetadata[s] || {}).forEach(types => {
-            Object.values(types).forEach(c => count += c);
-        });
-    } else {
-        Object.values(retroMetadata || {}).forEach(states => {
-            Object.values(states).forEach(types => {
-                Object.values(types).forEach(c => count += c);
-            });
-        });
-    }
-    
-    const preview = document.getElementById('retro-count-preview');
-    preview.textContent = count === 1 ? '1 record found' : `${count.toLocaleString()} records found`;
-    
-    const btn = document.getElementById('retro-download');
-    if (s && t && y && count > 0) {
-      btn.disabled = false;
-      btn.removeAttribute('aria-disabled');
-      btn.className = btn.className.replace('bg-slate-300', 'bg-emerald-600').replace('text-slate-500', 'text-white').replace('cursor-not-allowed', 'hover:bg-emerald-700');
-    } else {
-      btn.disabled = true;
-      btn.setAttribute('aria-disabled', 'true');
-      btn.className = btn.className.replace('bg-emerald-600', 'bg-slate-300').replace('text-white', 'text-slate-500').replace('hover:bg-emerald-700', 'cursor-not-allowed');
-    }
+  if (!retroMetadata) return;
+  const s = document.getElementById('retro-state').value;
+  const t = document.getElementById('retro-type').value;
+  const y = document.getElementById('retro-year').value;
+
+  let count = 0;
+  if (s && t && y) {
+    count = retroMetadata[s]?.[t]?.[y] || 0;
+  } else if (s && t) {
+    Object.values(retroMetadata[s]?.[t] || {}).forEach(c => count += c);
+  } else if (s) {
+    Object.values(retroMetadata[s] || {}).forEach(types => Object.values(types).forEach(c => count += c));
+  } else {
+    Object.values(retroMetadata || {}).forEach(states =>
+      Object.values(states).forEach(types => Object.values(types).forEach(c => count += c)));
+  }
+
+  const preview = document.getElementById('retro-count-preview');
+  preview.textContent = count === 1 ? '1 record found' : `${count.toLocaleString()} records found`;
+
+  const btn = document.getElementById('retro-download');
+  if (s && t && y && count > 0) {
+    btn.disabled = false;
+    btn.removeAttribute('aria-disabled');
+    btn.className = 'px-4 py-2 text-[12.5px] font-semibold rounded-lg transition-all flex items-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 cursor-pointer';
+  } else {
+    btn.disabled = true;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.className = 'px-4 py-2 text-[12.5px] font-semibold rounded-lg transition-all flex items-center gap-1.5 bg-gray-200 text-gray-400 cursor-not-allowed';
+  }
 }
 
 function showConfirmModal() {
-    return new Promise(resolve => {
-        const overlay = document.getElementById('confirm-overlay');
-        const card = document.getElementById('confirm-card');
-        overlay.classList.remove('opacity-0', 'pointer-events-none');
-        card.classList.remove('scale-95');
-        card.classList.add('scale-100');
-        confirmResolve = resolve;
-    });
+  return new Promise(resolve => {
+    const overlay = document.getElementById('confirm-overlay');
+    const card    = document.getElementById('confirm-card');
+    overlay.classList.remove('opacity-0', 'pointer-events-none');
+    card.classList.remove('scale-95'); card.classList.add('scale-100');
+    confirmResolve = resolve;
+  });
 }
 
 function closeConfirmModal(result) {
-    const overlay = document.getElementById('confirm-overlay');
-    const card = document.getElementById('confirm-card');
-    overlay.classList.add('opacity-0', 'pointer-events-none');
-    card.classList.remove('scale-100');
-    card.classList.add('scale-95');
-    if (confirmResolve) {
-        confirmResolve(result);
-        confirmResolve = null;
-    }
+  const overlay = document.getElementById('confirm-overlay');
+  const card    = document.getElementById('confirm-card');
+  overlay.classList.add('opacity-0', 'pointer-events-none');
+  card.classList.remove('scale-100'); card.classList.add('scale-95');
+  if (confirmResolve) { confirmResolve(result); confirmResolve = null; }
 }
 
 function bindEvents() {
-  document.getElementById('confirm-cancel').addEventListener('click', () => closeConfirmModal(false));
+  document.getElementById('confirm-cancel').addEventListener('click',  () => closeConfirmModal(false));
   document.getElementById('confirm-proceed').addEventListener('click', () => closeConfirmModal(true));
 
   document.getElementById('filter-state').addEventListener('change', e => {
-    filters.state = e.target.value;
+    filters.state   = e.target.value;
     filters.el_type = '';
-    filters.year = '';
-    
+    filters.year    = '';
     const typeEl = document.getElementById('filter-type');
     const yearEl = document.getElementById('filter-year');
     typeEl.innerHTML = '<option value="">All Types</option>';
     yearEl.innerHTML = '<option value="">All Years</option>';
-    
-    if (filters.state && filterMetadata && filterMetadata[filters.state]) {
-        typeEl.disabled = false;
-        Object.keys(filterMetadata[filters.state]).sort().forEach(t => typeEl.appendChild(new Option(t, t)));
-    } else {
-        typeEl.disabled = true;
-    }
+    if (filters.state && filterMetadata?.[filters.state]) {
+      typeEl.disabled = false;
+      Object.keys(filterMetadata[filters.state]).sort().forEach(t => typeEl.appendChild(new Option(t, t)));
+    } else { typeEl.disabled = true; }
     yearEl.disabled = true;
-    
     loadStats(); loadRecords();
   });
 
   document.getElementById('filter-type').addEventListener('change', e => {
     filters.el_type = e.target.value;
-    filters.year = '';
-    
+    filters.year    = '';
     const yearEl = document.getElementById('filter-year');
     yearEl.innerHTML = '<option value="">All Years</option>';
-    
-    if (filters.state && filters.el_type && filterMetadata && filterMetadata[filters.state]?.[filters.el_type]) {
-        yearEl.disabled = false;
-        Object.keys(filterMetadata[filters.state][filters.el_type]).sort((a,b)=>b.localeCompare(a)).forEach(y => yearEl.appendChild(new Option(y, y)));
-    } else {
-        yearEl.disabled = true;
-    }
-    
+    if (filters.state && filters.el_type && filterMetadata?.[filters.state]?.[filters.el_type]) {
+      yearEl.disabled = false;
+      Object.keys(filterMetadata[filters.state][filters.el_type]).sort((a, b) => b.localeCompare(a))
+        .forEach(y => yearEl.appendChild(new Option(y, y)));
+    } else { yearEl.disabled = true; }
     loadStats(); loadRecords();
   });
 
-  document.getElementById('filter-year').addEventListener('change', e => {
-    filters.year = e.target.value;
-    loadStats(); loadRecords();
-  });
-
-  document.getElementById('filter-sir').addEventListener('change', e => {
-    filters.sir_only = e.target.checked; loadStats(); loadRecords();
-  });
+  document.getElementById('filter-year').addEventListener('change',  e => { filters.year     = e.target.value; loadStats(); loadRecords(); });
+  document.getElementById('filter-sir').addEventListener('change',   e => { filters.sir_only = e.target.checked; loadStats(); loadRecords(); });
 
   document.getElementById('global-search').addEventListener('input', e => {
     clearTimeout(searchTimer);
@@ -699,34 +644,25 @@ function bindEvents() {
   });
 
   document.getElementById('clear-filters').addEventListener('click', () => {
-    Object.assign(filters, { state:'', el_type:'', year:'', status:'', sir_only:false, search:'', show_bp: false });
-
-    ['filter-state','filter-type','filter-year'].forEach(id => {
-      document.getElementById(id).value = '';
-    });
+    Object.assign(filters, { state: '', el_type: '', year: '', status: '', sir_only: false, search: '', show_bp: false });
+    ['filter-state', 'filter-type', 'filter-year'].forEach(id => { document.getElementById(id).value = ''; });
     document.getElementById('filter-type').disabled = true;
     document.getElementById('filter-year').disabled = true;
     document.getElementById('filter-sir').checked   = false;
     document.getElementById('global-search').value  = '';
-    // Reset KPI active state
     setActiveKpi(null);
-    // Reset BP toggle button to default visual (hidden, unhighlighted)
     const bpBtn = document.getElementById('toggle-bp-btn');
     if (bpBtn) {
-      bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
-      bpBtn.className = bpBtn.className
-        .replace('bg-indigo-50', 'bg-white')
-        .replace('text-indigo-700', 'text-slate-500')
-        .replace('border-indigo-200', 'border-slate-200');
+      bpBtn.innerHTML = '<span class="material-symbols-outlined text-gray-400" style="font-size:13px;">filter_alt</span> Show BP';
+      bpBtn.classList.remove('bg-indigo-50', 'text-indigo-700', 'border-indigo-200');
+      bpBtn.classList.add('bg-white', 'text-gray-500', 'border-gray-200');
     }
-    handleSideNav('all'); // also resets status filter
+    handleSideNav('all');
   });
 
   document.getElementById('select-all')?.addEventListener('change', e => {
-    const isChecked = e.target.checked;
-    allRecords.forEach(r => isChecked ? selectedIds.add(r.id) : selectedIds.delete(r.id));
-    renderTable();
-    updateSelBar();
+    allRecords.forEach(r => e.target.checked ? selectedIds.add(r.id) : selectedIds.delete(r.id));
+    renderTable(); updateSelBar();
   });
 
   document.querySelectorAll('th.sortable').forEach(th => {
@@ -738,89 +674,134 @@ function bindEvents() {
     });
   });
 
-  // Selection export bar removed, keeping clearSelection internal for Esc key
-
   document.getElementById('modal-close').addEventListener('click',  closeModal);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   document.getElementById('modal-save').addEventListener('click',   saveModal);
-  document.getElementById('overlay').addEventListener('click', e => {
-    if (e.target === e.currentTarget) closeModal();
-  });
+  document.getElementById('overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
 
   document.querySelectorAll('.sidelink').forEach(el => {
     el.addEventListener('click', e => { e.preventDefault(); handleSideNav(el.dataset.view); });
   });
 
-  // ── Tab Navigation ───────────────────────────────────────────────────────
+  // ── Tab navigation ──────────────────────────────────────────────────────
   const navTabs = [
-    { id: 'nav-listing', viewId: 'listing-view', setup: () => { loadStats(); loadRecords(); } },
+    { id: 'nav-listing',   viewId: 'listing-view',   setup: () => { loadStats(); loadRecords(); } },
     { id: 'nav-dashboard', viewId: 'dashboard-view', setup: loadDashboardStats },
-    { id: 'nav-glance', viewId: 'glance-view', setup: loadGlancePanel }
+    { id: 'nav-glance',    viewId: 'glance-view',    setup: loadGlancePanel },
   ];
 
   function switchTab(activeId) {
     navTabs.forEach(t => {
-      const nav = document.getElementById(t.id);
+      const nav  = document.getElementById(t.id);
       const view = document.getElementById(t.viewId);
       if (!nav || !view) return;
       if (t.id === activeId) {
         view.classList.remove('hidden'); view.classList.add('flex');
-        nav.classList.add('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
-        nav.classList.remove('text-slate-500','font-medium');
-        if(t.setup) t.setup();
+        nav.classList.add('active');
+        if (t.setup) t.setup();
       } else {
         view.classList.add('hidden'); view.classList.remove('flex');
-        nav.classList.remove('font-bold','border-b-2','border-slate-800','dark:border-slate-400','text-slate-900');
-        nav.classList.add('text-slate-500','font-medium');
+        nav.classList.remove('active');
       }
     });
   }
 
   navTabs.forEach(t => {
-      const el = document.getElementById(t.id);
-      if(el) el.addEventListener('click', () => switchTab(t.id));
+    const el = document.getElementById(t.id);
+    if (el) el.addEventListener('click', () => switchTab(t.id));
   });
 
-  // Month filter & refresh for Dashboard
   const dashMonthFilter = document.getElementById('dash-month-filter');
   const dashRefreshBtn  = document.getElementById('dash-refresh-btn');
   if (dashMonthFilter) dashMonthFilter.addEventListener('change', loadDashboardStats);
   if (dashRefreshBtn)  dashRefreshBtn.addEventListener('click',   loadDashboardStats);
 
-  // Filters for Glance
-  const glanceMoFil  = document.getElementById('glance-month-filter');
-  const glanceStFil  = document.getElementById('glance-state-filter');
-  const glanceTyFil  = document.getElementById('glance-type-filter');
-  if (glanceMoFil) glanceMoFil.addEventListener('change', loadGlancePanel);
-  if (glanceStFil) glanceStFil.addEventListener('change', loadGlancePanel);
-  if (glanceTyFil) glanceTyFil.addEventListener('change', loadGlancePanel);
+  // Dashboard SIR Only toggle
+  const dashSirBtn = document.getElementById('dash-sir-btn');
+  if (dashSirBtn) {
+    dashSirBtn.addEventListener('click', () => {
+      dashSirOnly = !dashSirOnly;
+      setDashToggle(dashSirBtn, dashSirOnly, 'priority_high', 'SIR Only', 'amber');
+      loadDashboardStats();
+    });
+  }
 
-  document.getElementById('nav-retro').addEventListener('click', e => {
-    e.preventDefault();
-    openRetroModal();
+  // Dashboard Show BP Years toggle
+  const dashBpBtn = document.getElementById('dash-bp-btn');
+  if (dashBpBtn) {
+    dashBpBtn.addEventListener('click', () => {
+      dashShowBp = !dashShowBp;
+      setDashToggle(dashBpBtn, dashShowBp,
+        dashShowBp ? 'filter_alt_off' : 'filter_alt',
+        dashShowBp ? 'Hide BP Years' : 'Show BP Years', 'indigo');
+      loadDashboardStats();
+    });
+  }
+
+  ['glance-month-filter', 'glance-state-filter', 'glance-type-filter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', loadGlancePanel);
   });
 
+  // Glance Report → Download analytics PDF (this week in focus)
+  const glancePdfBtn = document.getElementById('glance-pdf-btn');
+  if (glancePdfBtn) {
+    glancePdfBtn.addEventListener('click', async () => {
+      const state = (document.getElementById('glance-state-filter') || {}).value || '';
+      const type  = (document.getElementById('glance-type-filter')  || {}).value || '';
+      const params = new URLSearchParams();
+      if (state) params.set('state', state);
+      if (type)  params.set('el_type', type);
 
-  document.getElementById('retro-close').addEventListener('click', closeRetroModal);
+      const orig = glancePdfBtn.innerHTML;
+      glancePdfBtn.disabled = true;
+      glancePdfBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:14px;">refresh</span> Generating…';
+      try {
+        const res = await fetch('/api/glance_report/pdf?' + params.toString());
+        if (!res.ok) {
+          let msg = 'PDF generation failed';
+          try { msg = (await res.json()).error || msg; } catch (_) {}
+          throw new Error(msg);
+        }
+        const blob = await res.blob();
+        const cd   = res.headers.get('Content-Disposition') || '';
+        const m    = cd.match(/filename="?([^"]+)"?/);
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url;
+        a.download = m ? m[1] : 'Glance_Report.pdf';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Glance Report PDF downloaded');
+      } catch (e) {
+        showToast(e.message, true);
+      } finally {
+        glancePdfBtn.disabled = false;
+        glancePdfBtn.innerHTML = orig;
+      }
+    });
+  }
+
+  document.getElementById('nav-retro').addEventListener('click', e => {
+    e.preventDefault(); openRetroModal();
+  });
+
+  document.getElementById('retro-close').addEventListener('click',  closeRetroModal);
   document.getElementById('retro-cancel').addEventListener('click', closeRetroModal);
   document.getElementById('retro-overlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeRetroModal();
   });
 
-  // Cascading change handlers for retro dropdowns
   document.getElementById('retro-state').addEventListener('change', e => {
     const s = e.target.value;
     const typeEl = document.getElementById('retro-type');
     const yearEl = document.getElementById('retro-year');
     typeEl.innerHTML = '<option value="">All Types</option>';
     yearEl.innerHTML = '<option value="">All Years</option>';
-    
-    if (s && retroMetadata[s]) {
-        typeEl.disabled = false;
-        Object.keys(retroMetadata[s]).sort().forEach(t => typeEl.appendChild(new Option(t, t)));
-    } else {
-        typeEl.disabled = true;
-    }
+    if (s && retroMetadata?.[s]) {
+      typeEl.disabled = false;
+      Object.keys(retroMetadata[s]).sort().forEach(t => typeEl.appendChild(new Option(t, t)));
+    } else { typeEl.disabled = true; }
     yearEl.disabled = true;
     updateRetroCountLocal();
   });
@@ -830,55 +811,39 @@ function bindEvents() {
     const t = e.target.value;
     const yearEl = document.getElementById('retro-year');
     yearEl.innerHTML = '<option value="">All Years</option>';
-    
-    if (s && t && retroMetadata[s]?.[t]) {
-        yearEl.disabled = false;
-        Object.keys(retroMetadata[s][t]).sort((a,b)=>b.localeCompare(a)).forEach(y => yearEl.appendChild(new Option(y, y)));
-    } else {
-        yearEl.disabled = true;
-    }
+    if (s && t && retroMetadata?.[s]?.[t]) {
+      yearEl.disabled = false;
+      Object.keys(retroMetadata[s][t]).sort((a, b) => b.localeCompare(a)).forEach(y => yearEl.appendChild(new Option(y, y)));
+    } else { yearEl.disabled = true; }
     updateRetroCountLocal();
   });
 
-  document.getElementById('retro-year').addEventListener('change', () => {
-    updateRetroCountLocal();
-  });
+  document.getElementById('retro-year').addEventListener('change', updateRetroCountLocal);
 
   document.getElementById('retro-download').addEventListener('click', async () => {
-    const state = document.getElementById('retro-state').value;
-    const type = document.getElementById('retro-type').value;
-    const year = document.getElementById('retro-year').value;
-    const fmt = document.getElementById('retro-format').value;
+    const state  = document.getElementById('retro-state').value;
+    const type   = document.getElementById('retro-type').value;
+    const year   = document.getElementById('retro-year').value;
+    const fmt    = document.getElementById('retro-format').value;
+    if (!state || !type || !year) { showToast('Please select State, Type, and Year.', true); return; }
 
-    if (!state || !type || !year) {
-      showToast('Please select State, Type, and Year.', true);
-      return;
-    }
-    
     const btn = document.getElementById('retro-download');
     btn.disabled = true;
-    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-[16px]">refresh</span> Downloading...';
+    btn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:14px;">refresh</span> Downloading…';
     try {
       const res = await fetch(`/api/retro/export?state=${state}&el_type=${type}&year=${year}&format=${fmt}`);
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Export failed');
-      }
-      
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Export failed'); }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Retro_${state}_${type}_${year}.${fmt}`;
-      a.click();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = `Retro_${state}_${type}_${year}.${fmt}`; a.click();
       URL.revokeObjectURL(url);
       showToast('Download started');
       closeRetroModal();
-    } catch (e) {
-      showToast(e.message, true);
-    } finally {
+    } catch (e) { showToast(e.message, true); }
+    finally {
       btn.disabled = false;
-      btn.innerHTML = '<span class="material-symbols-outlined text-[16px]">download</span> Download';
+      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">download</span> Download';
       updateRetroCountLocal();
     }
   });
@@ -887,284 +852,504 @@ function bindEvents() {
     if (e.key === 'Escape') { closeModal(); closeRetroModal(); clearSelection(); }
   });
 
-  // BP toggle button
+  // BP toggle
   const bpBtn = document.getElementById('toggle-bp-btn');
   if (bpBtn) {
     bpBtn.addEventListener('click', () => {
       filters.show_bp = !filters.show_bp;
       if (filters.show_bp) {
-        bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt_off</span> Hide BP Years';
-        bpBtn.className = bpBtn.className
-          .replace('bg-white', 'bg-indigo-50')
-          .replace('text-slate-500', 'text-indigo-700')
-          .replace('border-slate-200', 'border-indigo-200');
+        bpBtn.innerHTML = '<span class="material-symbols-outlined text-indigo-500" style="font-size:13px;">filter_alt_off</span> Hide BP';
+        bpBtn.classList.remove('bg-white', 'text-gray-500', 'border-gray-200');
+        bpBtn.classList.add('bg-indigo-50', 'text-indigo-700', 'border-indigo-200');
       } else {
-        bpBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span> Show BP Years';
-        bpBtn.className = bpBtn.className
-          .replace('bg-indigo-50', 'bg-white')
-          .replace('text-indigo-700', 'text-slate-500')
-          .replace('border-indigo-200', 'border-slate-200');
+        bpBtn.innerHTML = '<span class="material-symbols-outlined text-gray-400" style="font-size:13px;">filter_alt</span> Show BP';
+        bpBtn.classList.remove('bg-indigo-50', 'text-indigo-700', 'border-indigo-200');
+        bpBtn.classList.add('bg-white', 'text-gray-500', 'border-gray-200');
       }
-      loadStats();
-      loadRecords();
+      loadStats(); loadRecords();
     });
   }
 }
 
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 async function loadDashboardStats() {
-    const monthFilter = (document.getElementById('dash-month-filter') || {}).value || '';
-    try {
-        const [stats, glance] = await Promise.all([
-            apiFetch('/api/stats'),
-            apiFetch('/api/glance_report' + (monthFilter ? '?month=' + monthFilter : ''))
-        ]);
+  const monthFilter = (document.getElementById('dash-month-filter') || {}).value || '';
+  try {
+    // Build shared dashboard filter params (BP hidden by default)
+    const statsParams = new URLSearchParams();
+    if (!dashShowBp)  statsParams.set('hide_bp', '1');
+    if (dashSirOnly)  statsParams.set('sir_only', '1');
 
-        // ── Populate month dropdown (only once) ───────────────────────────────
-        const sel = document.getElementById('dash-month-filter');
-        if (sel && glance.available_months && sel.options.length <= 1) {
-            glance.available_months.forEach(m => {
-                const opt = document.createElement('option');
-                opt.value = m;
-                const [yr, mo] = m.split('-');
-                opt.textContent = new Date(yr, parseInt(mo) - 1)
-                    .toLocaleString('default', { month: 'long', year: 'numeric' });
-                sel.appendChild(opt);
-            });
-        }
+    const glanceParams = new URLSearchParams();
+    if (monthFilter)  glanceParams.set('month', monthFilter);
+    if (!dashShowBp)  glanceParams.set('hide_bp', '1');
+    if (dashSirOnly)  glanceParams.set('sir_only', '1');
 
-        const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-        const bs = stats.by_status || {};
-        const total = stats.total || 0;
-        const dbPushed = (bs.db_pushed || 0) + (bs.completed || 0);
+    const [stats, glance] = await Promise.all([
+      apiFetch('/api/stats?' + statsParams.toString()),
+      apiFetch('/api/glance_report?' + glanceParams.toString()),
+    ]);
 
-        // ── KPI Cards ─────────────────────────────────────────────────────────
-        setEl('dash-total',      total);
-        setEl('dash-db-pushed',  dbPushed);
-        setEl('dash-downloaded', bs.downloaded || 0);
-        setEl('dash-missing',    bs.missing    || 0);
-
-        // ── Progress Banner ───────────────────────────────────────────────────
-        const pct = total > 0 ? Math.round((dbPushed / total) * 100) : 0;
-        setEl('dash-progress-pct', pct + '%');
-        setEl('dash-progress-sub', `${dbPushed} / ${total} records pushed to DB`);
-        const progBar = document.getElementById('dash-prog-bar');
-        if (progBar) progBar.style.width = pct + '%';
-
-        // ── Status Donut Chart ────────────────────────────────────────────────
-        const pieLabels = ['Downloaded', 'Extracted', 'DB Pushed / Completed', 'Missing', 'Pending'];
-        const pieVals   = [
-            bs.downloaded || 0,
-            bs.extracted  || 0,
-            (bs.db_pushed || 0) + (bs.completed || 0),
-            bs.missing    || 0,
-            bs.pending    || 0
-        ];
-        const pieColors = ['#6366f1', '#a855f7', '#10b981', '#ef4444', '#f59e0b'];
-        const pieData = {
-            labels: pieLabels,
-            datasets: [{ data: pieVals, backgroundColor: pieColors, borderWidth: 2, borderColor: '#fff' }]
-        };
-        if (pieChart) {
-            pieChart.data = pieData; pieChart.update();
-        } else {
-            pieChart = new Chart(document.getElementById('statusPieChart').getContext('2d'), {
-                type: 'doughnut',
-                data: pieData,
-                options: {
-                    responsive: true, maintainAspectRatio: false, cutout: '62%',
-                    plugins: {
-                        legend: { position: 'right', labels: { font: { size: 11 }, padding: 14, boxWidth: 12 } }
-                    }
-                }
-            });
-        }
-
-        // ── Monthly Bar Chart (DB Pushed trend) ───────────────────────────────
-        const allMonthCounts = glance.monthly_counts || {};
-        const thisMonthKey = new Date().toISOString().slice(0, 7);
-        const sortedMonths = Object.keys(allMonthCounts).sort();
-        const monthLabels  = sortedMonths.map(m => {
-            const [yr, mo] = m.split('-');
-            return new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'short', year: '2-digit' });
-        });
-        const monthData = sortedMonths.map(m => allMonthCounts[m]);
-
-        if (window.monthlyBarChart) { window.monthlyBarChart.destroy(); window.monthlyBarChart = null; }
-        window.monthlyBarChart = new Chart(document.getElementById('monthlyBarChart').getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: monthLabels,
-                datasets: [{
-                    label: 'DB Pushed',
-                    data: monthData,
-                    backgroundColor: sortedMonths.map(m => m === thisMonthKey ? '#10b981' : '#818cf8'),
-                    borderColor:     sortedMonths.map(m => m === thisMonthKey ? '#059669' : '#6366f1'),
-                    borderWidth: 1, borderRadius: 6
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-            }
-        });
-
-        // ── Weekly Velocity Chart ─────────────────────────────────────────────
-        const allWeekCounts = glance.weekly_counts || {};
-        let weekKeys, weekCounts, subtitle;
-        if (monthFilter && Object.keys(glance.weekly_in_month || {}).length > 0) {
-            const wim = glance.weekly_in_month;
-            weekKeys   = Object.keys(wim).sort();
-            weekCounts = weekKeys.map(k => wim[k]);
-            subtitle   = 'Weeks in ' + new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
-        } else {
-            weekKeys   = Object.keys(allWeekCounts).sort();
-            weekCounts = weekKeys.map(k => allWeekCounts[k]);
-            subtitle   = monthFilter ? 'No DB pushes recorded for this month' : 'All weeks since tracking began';
-        }
-        setEl('weekly-chart-subtitle', subtitle);
-        const shortWeek = k => k.slice(5, 10); // MM-DD
-
-        if (barChart) {
-            barChart.data.labels = weekKeys.map(shortWeek);
-            barChart.data.datasets[0].data = weekCounts;
-            barChart.update();
-        } else {
-            barChart = new Chart(document.getElementById('weeklyBarChart').getContext('2d'), {
-                type: 'bar',
-                data: {
-                    labels: weekKeys.map(shortWeek),
-                    datasets: [{
-                        label: 'DB Pushed',
-                        data: weekCounts,
-                        backgroundColor: '#a5b4fc',
-                        borderColor: '#6366f1',
-                        borderWidth: 1, borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
-            });
-        }
-
-    } catch (e) {
-        console.error('loadDashboardStats:', e);
+    // Populate month dropdown once
+    const sel = document.getElementById('dash-month-filter');
+    if (sel && glance.available_months && sel.options.length <= 1) {
+      glance.available_months.forEach(m => {
+        const [yr, mo] = m.split('-');
+        sel.appendChild(new Option(
+          new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' }), m
+        ));
+      });
     }
+
+    const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const bs     = stats.by_status || {};
+    const total  = stats.total || 0;
+    const dbPushed = (bs.db_pushed || 0) + (bs.completed || 0);
+    const pct    = total > 0 ? Math.round((dbPushed / total) * 100) : 0;
+
+    // KPI cards
+    setEl('dash-total',      total);
+    setEl('dash-db-pushed',  dbPushed);
+    setEl('dash-downloaded', bs.downloaded || 0);
+    setEl('dash-missing',    bs.missing    || 0);
+
+    // Progress
+    setEl('dash-progress-pct', pct + '%');
+    setEl('dash-progress-sub', `${dbPushed.toLocaleString()} / ${total.toLocaleString()} records pushed to DB`);
+    const progBar    = document.getElementById('dash-prog-bar');
+    const progBarKpi = document.getElementById('dash-prog-bar-kpi');
+    if (progBar)    progBar.style.width    = pct + '%';
+    if (progBarKpi) progBarKpi.style.width = pct + '%';
+
+    // Sidebar progress sync
+    const pctSidebar = document.getElementById('progress-pct-sidebar');
+    const pbFill     = document.getElementById('progress-bar-fill');
+    const progText   = document.getElementById('progress-text');
+    if (pctSidebar) pctSidebar.textContent = pct + '%';
+    if (pbFill)     pbFill.style.width     = pct + '%';
+    if (progText)   progText.textContent   = `${dbPushed} / ${total} completed`;
+
+    // Pipeline stages
+    setEl('pipe-missing',    bs.missing    || 0);
+    setEl('pipe-downloaded', bs.downloaded || 0);
+    setEl('pipe-extracted',  bs.extracted  || 0);
+    setEl('pipe-db-pushed',  dbPushed);
+
+    // ── Status breakdown — horizontal bar chart ──────────────────────────────
+    const pieLabels = ['Downloaded', 'Extracted', 'DB Pushed', 'Missing', 'Pending'];
+    const pieVals   = [
+      bs.downloaded || 0,
+      bs.extracted  || 0,
+      dbPushed,
+      bs.missing    || 0,
+      bs.pending    || 0,
+    ];
+    const pieColors = ['#3b82f6', '#7c3aed', '#10b981', '#ef4444', '#f59e0b'];
+
+    const pieCtx = document.getElementById('statusPieChart')?.getContext('2d');
+    if (pieCtx) {
+      if (pieChart) { pieChart.destroy(); pieChart = null; }
+      pieChart = new Chart(pieCtx, {
+        type: 'bar',
+        data: {
+          labels: pieLabels,
+          datasets: [{
+            data: pieVals,
+            backgroundColor: pieColors,
+            borderRadius: 4,
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: {
+              beginAtZero: true,
+              ticks: { precision: 0, font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
+              grid:  { color: '#f3f4f6' },
+            },
+            y: {
+              ticks: { font: { size: 11, family: 'Inter' }, color: '#374151' },
+              grid:  { display: false },
+            },
+          },
+        },
+      });
+    }
+
+    // ── Monthly bar chart ────────────────────────────────────────────────────
+    const allMonthCounts = glance.monthly_counts || {};
+    const thisMonthKey   = new Date().toISOString().slice(0, 7);
+    const sortedMonths   = Object.keys(allMonthCounts).sort();
+    const monthLabels    = sortedMonths.map(m => {
+      const [yr, mo] = m.split('-');
+      return new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'short', year: '2-digit' });
+    });
+
+    if (monthlyChart) { monthlyChart.destroy(); monthlyChart = null; }
+    const mCtx = document.getElementById('monthlyBarChart')?.getContext('2d');
+    if (mCtx) {
+      monthlyChart = new Chart(mCtx, {
+        type: 'bar',
+        data: {
+          labels: monthLabels,
+          datasets: [{
+            label: 'DB Pushed',
+            data:  sortedMonths.map(m => allMonthCounts[m]),
+            backgroundColor: sortedMonths.map(m => m === thisMonthKey ? '#10b981' : '#c7d2fe'),
+            borderColor:     sortedMonths.map(m => m === thisMonthKey ? '#059669' : '#6366f1'),
+            borderWidth: 1,
+            borderRadius: 5,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0, font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
+              grid:  { color: '#f3f4f6' },
+            },
+            x: {
+              ticks: { font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
+              grid:  { display: false },
+            },
+          },
+        },
+      });
+    }
+
+    // ── Weekly velocity chart ────────────────────────────────────────────────
+    const allWeekCounts = glance.weekly_counts || {};
+    let weekKeys, weekCounts, subtitle;
+    if (monthFilter && Object.keys(glance.weekly_in_month || {}).length > 0) {
+      const wim   = glance.weekly_in_month;
+      weekKeys    = Object.keys(wim).sort();
+      weekCounts  = weekKeys.map(k => wim[k]);
+      subtitle    = 'Weeks in ' + new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
+    } else {
+      weekKeys    = Object.keys(allWeekCounts).sort();
+      weekCounts  = weekKeys.map(k => allWeekCounts[k]);
+      subtitle    = monthFilter ? 'No DB pushes recorded for this month' : 'All weeks since tracking began';
+    }
+    setEl('weekly-chart-subtitle', subtitle);
+
+    if (barChart) {
+      barChart.data.labels              = weekKeys.map(k => k.slice(5, 10));
+      barChart.data.datasets[0].data   = weekCounts;
+      barChart.update();
+    } else {
+      const wCtx = document.getElementById('weeklyBarChart')?.getContext('2d');
+      if (wCtx) {
+        barChart = new Chart(wCtx, {
+          type: 'bar',
+          data: {
+            labels: weekKeys.map(k => k.slice(5, 10)),
+            datasets: [{
+              label: 'DB Pushed',
+              data:  weekCounts,
+              backgroundColor: '#c7d2fe',
+              borderColor:     '#6366f1',
+              borderWidth: 1,
+              borderRadius: 4,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { precision: 0, font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
+                grid:  { color: '#f3f4f6' },
+              },
+              x: {
+                ticks: { font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
+                grid:  { display: false },
+              },
+            },
+          },
+        });
+      }
+    }
+
+  } catch (e) { console.error('loadDashboardStats:', e); }
 }
 
 
-
-
-
+// ── Glance Report ─────────────────────────────────────────────────────────────
 async function loadGlancePanel() {
-    const monthFilter = (document.getElementById('glance-month-filter') || {}).value || '';
-    const stateFilter = (document.getElementById('glance-state-filter') || {}).value || '';
-    const typeFilter = (document.getElementById('glance-type-filter') || {}).value || '';
-    try {
-        const params = new URLSearchParams();
-        if (monthFilter) params.append('month', monthFilter);
-        if (stateFilter) params.append('state', stateFilter);
-        if (typeFilter) params.append('el_type', typeFilter);
-        
-        const glance = await apiFetch('/api/glance_report?' + params.toString());
-        
-        // Populate filters if empty
-        const moSel = document.getElementById('glance-month-filter');
-        if (moSel && glance.available_months && moSel.options.length <= 1) {
-            glance.available_months.forEach(m => {
-                const opt = document.createElement('option');
-                opt.value = m;
-                const [yr, mo] = m.split('-');
-                opt.textContent = new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
-                moSel.appendChild(opt);
-            });
-        }
-        
-        // Also grab state/type filters from the main filter dropdows to populate these
-        const stSel = document.getElementById('glance-state-filter');
-        if (stSel && stSel.options.length <= 1) {
-            const mainState = document.getElementById('filter-state');
-            if (mainState && mainState.options) {
-                Array.from(mainState.options).forEach(o => {
-                    if (o.value) stSel.add(new Option(o.text, o.value));
-                });
-            }
-        }
-        const tySel = document.getElementById('glance-type-filter');
-        if (tySel && tySel.options.length <= 1) {
-            const mainType = document.getElementById('filter-type');
-            if (mainType && mainType.options) {
-                Array.from(mainType.options).forEach(o => {
-                    if (o.value) tySel.add(new Option(o.text, o.value));
-                });
-            }
-        }
-        
-        const accordion = document.getElementById('glance-panel-accordion');
-        const countSpan = document.getElementById('glance-panel-count');
-        const allWeeks = glance.all_weeks || [];
-        
-        if (countSpan) countSpan.textContent = allWeeks.reduce((acc, w) => acc + w.count, 0) + ' records';
-        
-        if (!accordion) return;
+  const monthFilter = (document.getElementById('glance-month-filter') || {}).value || '';
+  const stateFilter = (document.getElementById('glance-state-filter') || {}).value || '';
+  const typeFilter  = (document.getElementById('glance-type-filter')  || {}).value || '';
+  try {
+    const params = new URLSearchParams();
+    if (monthFilter) params.append('month',   monthFilter);
+    if (stateFilter) params.append('state',   stateFilter);
+    if (typeFilter)  params.append('el_type', typeFilter);
 
-        if (allWeeks.length === 0) {
-            accordion.innerHTML = `<div class="p-10 text-center flex flex-col items-center gap-3 text-slate-400">
-                <span class="material-symbols-outlined" style="font-size:36px;">hourglass_empty</span>
-                <p class="text-sm">No DB pushed records found.</p>
-            </div>`;
-        } else {
-            accordion.innerHTML = allWeeks.map((w, i) => {
-                const isCurrent = w.is_current;
-                const badge = isCurrent
-                    ? `<span class="ml-2 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Current Week</span>`
-                    : '';
-                const rows = w.records.map(r =>
-                    `<tr class="hover:bg-indigo-50/40 transition-colors">
-                        <td class="py-2 px-6 text-[12px] font-mono text-slate-700 font-semibold">${r.key}</td>
-                        <td class="py-2 px-6 text-[12px] text-slate-400">${r.date}</td>
-                        <td class="py-2 px-6"><span class="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200">DB Pushed</span></td>
-                    </tr>`
-                ).join('');
-                return `<div id="panel-week-${i}">
-                    <button onclick="togglePanelWeek(${i})" class="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors text-left group border-none">
-                        <div class="flex items-center gap-3">
-                            <span class="w-2.5 h-2.5 rounded-full ${isCurrent ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-indigo-300'} shrink-0"></span>
-                            <span class="text-[13px] font-bold text-slate-800">${w.week}${badge}</span>
-                        </div>
-                        <div class="flex items-center gap-4">
-                            <span class="text-[11px] font-bold ${isCurrent ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-600 border-slate-200'} border px-3 py-1 rounded-full shadow-sm">${w.count} records</span>
-                            <div class="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-slate-200 transition-colors">
-                                <span class="material-symbols-outlined text-slate-400 group-hover:text-slate-600 panel-week-chevron-${i}" style="font-size:18px;transition:transform 0.2s">${i === 0 ? 'expand_less' : 'expand_more'}</span>
-                            </div>
-                        </div>
-                    </button>
-                    <div id="panel-week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-slate-100 bg-slate-50/30">
-                        <table class="w-full">
-                            <thead><tr class="border-b border-slate-200 bg-slate-100/50">
-                                <th class="py-2 px-6 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-1/3">Election Key</th>
-                                <th class="py-2 px-6 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-1/3">Date Pushed</th>
-                                <th class="py-2 px-6 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-1/3">Status</th>
-                            </tr></thead>
-                            <tbody>${rows}</tbody>
-                        </table>
-                    </div>
-                </div>`;
-            }).join('');
-        }
-    } catch (e) {
-        console.error('loadGlancePanel:', e);
+    const glance = await apiFetch('/api/glance_report?' + params.toString());
+
+    // Populate month filter once
+    const moSel = document.getElementById('glance-month-filter');
+    if (moSel && glance.available_months && moSel.options.length <= 1) {
+      glance.available_months.forEach(m => {
+        const [yr, mo] = m.split('-');
+        moSel.appendChild(new Option(
+          new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' }), m
+        ));
+      });
     }
+
+    // Populate state/type filters from main selects once
+    const stSel = document.getElementById('glance-state-filter');
+    if (stSel && stSel.options.length <= 1) {
+      const mainState = document.getElementById('filter-state');
+      if (mainState) Array.from(mainState.options).forEach(o => { if (o.value) stSel.add(new Option(o.text, o.value)); });
+    }
+    const tySel = document.getElementById('glance-type-filter');
+    if (tySel && tySel.options.length <= 1) {
+      const mainType = document.getElementById('filter-type');
+      if (mainType) Array.from(mainType.options).forEach(o => { if (o.value) tySel.add(new Option(o.text, o.value)); });
+    }
+
+    const accordion = document.getElementById('glance-panel-accordion');
+    const countSpan = document.getElementById('glance-panel-count');
+    const allWeeks  = glance.all_weeks || [];
+
+    if (countSpan) countSpan.textContent = allWeeks.reduce((acc, w) => acc + w.count, 0) + ' records';
+
+    renderGlanceAnalytics(glance, allWeeks);
+
+    if (!accordion) return;
+
+    if (allWeeks.length === 0) {
+      accordion.innerHTML = `
+        <div class="p-12 text-center flex flex-col items-center gap-3 text-gray-400">
+          <span class="material-symbols-outlined" style="font-size:32px;">inbox</span>
+          <p class="text-[12.5px] font-medium">No DB pushed records found for the selected filters.</p>
+        </div>`;
+      return;
+    }
+
+    accordion.innerHTML = allWeeks.map((w, i) => {
+      const isCurrent = w.is_current;
+
+      const badge = isCurrent
+        ? `<span class="ml-2 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">Current</span>`
+        : '';
+
+      const rows = w.records.map(r => `
+        <tr class="hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0">
+          <td class="py-2 px-5 text-[12px] font-mono text-gray-700 font-medium">${r.key}</td>
+          <td class="py-2 px-5 text-[11.5px] text-gray-400">${r.date}</td>
+          <td class="py-2 px-5">
+            <span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-0.5 rounded-full">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+              DB Pushed
+            </span>
+          </td>
+        </tr>`).join('');
+
+      return `
+        <div id="panel-week-${i}">
+          <button onclick="togglePanelWeek(${i})"
+            class="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group">
+            <div class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-full ${isCurrent ? 'bg-emerald-400' : 'bg-gray-300'} shrink-0"></span>
+              <span class="text-[13px] font-semibold text-gray-900">${w.week}</span>
+              ${badge}
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-[11px] font-semibold px-2.5 py-1 rounded-full border
+                ${isCurrent ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-600 border-gray-200'}">
+                ${w.count} records
+              </span>
+              <span class="material-symbols-outlined text-gray-300 group-hover:text-gray-500 panel-week-chevron-${i} transition-transform"
+                style="font-size:16px;">${i === 0 ? 'expand_less' : 'expand_more'}</span>
+            </div>
+          </button>
+          <div id="panel-week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-gray-100">
+            <table class="w-full">
+              <thead>
+                <tr class="bg-gray-50 border-b border-gray-100">
+                  <th class="px-5 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Election Key</th>
+                  <th class="px-5 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Date Pushed</th>
+                  <th class="px-5 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join('');
+
+  } catch (e) { console.error('loadGlancePanel:', e); }
+}
+
+function renderGlanceAnalytics(glance, allWeeks) {
+  // Flatten all pushed records
+  const allRecs = [];
+  allWeeks.forEach(w => w.records.forEach(r => allRecs.push(r)));
+  const total = allRecs.length;
+
+  // Aggregate by state / type from the record key (STATE-TYPE-YEAR)
+  const stateCounts = {}, typeCounts = {};
+  allRecs.forEach(r => {
+    const parts = String(r.key).split('-');
+    const st = parts[0] || '?';
+    const ty = parts[1] || '?';
+    stateCounts[st] = (stateCounts[st] || 0) + 1;
+    typeCounts[ty]  = (typeCounts[ty]  || 0) + 1;
+  });
+
+  // Weekly series (ascending by start date)
+  const weekly   = glance.weekly_counts || {};
+  const weekKeys = Object.keys(weekly).sort();
+  const activeWeeks = weekKeys.length;
+
+  // This week vs last week
+  const curWeek = glance.current_week || '';
+  const thisWeek = weekly[curWeek] || 0;
+  let lastWeek = 0;
+  if (curWeek) {
+    const start = curWeek.slice(0, 10);
+    const d = new Date(start + 'T00:00:00');
+    d.setDate(d.getDate() - 7);
+    const lwStart = d.toISOString().slice(0, 10);
+    const lwLabel = Object.keys(weekly).find(k => k.startsWith(lwStart));
+    if (lwLabel) lastWeek = weekly[lwLabel];
+  }
+
+  const setT = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  // ── Summary stat cards ──────────────────────────────────────────────────
+  setT('glance-stat-total',     total.toLocaleString());
+  setT('glance-stat-total-sub', total === 1 ? 'record in database' : 'records in database');
+  setT('glance-stat-thisweek',  thisWeek);
+  setT('glance-stat-avg',       activeWeeks ? (total / activeWeeks).toFixed(1) : '0');
+  setT('glance-stat-weeks',     `over ${activeWeeks} active week${activeWeeks === 1 ? '' : 's'}`);
+  setT('glance-stat-states',    Object.keys(stateCounts).length);
+
+  const topState = Object.entries(stateCounts).sort((a, b) => b[1] - a[1])[0];
+  setT('glance-stat-topstate',  topState ? `top: ${topState[0]} (${topState[1]})` : 'top: —');
+
+  // Trend chip (this vs last week)
+  const trendEl = document.getElementById('glance-stat-trend');
+  if (trendEl) {
+    const diff = thisWeek - lastWeek;
+    let icon, color, text;
+    if (diff > 0)      { icon = 'arrow_upward';   color = 'text-emerald-600'; text = `+${diff} vs last week`; }
+    else if (diff < 0) { icon = 'arrow_downward'; color = 'text-red-500';     text = `${diff} vs last week`; }
+    else               { icon = 'remove';          color = 'text-gray-400';    text = `same as last week`; }
+    trendEl.innerHTML = `<span class="material-symbols-outlined ${color}" style="font-size:13px;">${icon}</span><span class="${color} font-medium">${text}</span>`;
+  }
+
+  // ── Weekly trend chart (area) ───────────────────────────────────────────
+  const wCtx = document.getElementById('glanceWeeklyChart')?.getContext('2d');
+  if (wCtx) {
+    if (gWeekChart) { gWeekChart.destroy(); gWeekChart = null; }
+    const labels = weekKeys.map(k => {
+      const s = k.slice(5, 10); const e = k.slice(19, 24);
+      return e ? `${s}–${e}` : s;
+    });
+    const grad = wCtx.createLinearGradient(0, 0, 0, 200);
+    grad.addColorStop(0, 'rgba(99,102,241,0.25)');
+    grad.addColorStop(1, 'rgba(99,102,241,0.01)');
+    gWeekChart = new Chart(wCtx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'DB Pushed',
+          data: weekKeys.map(k => weekly[k]),
+          borderColor: '#6366f1',
+          backgroundColor: grad,
+          borderWidth: 2,
+          pointBackgroundColor: '#6366f1',
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.35,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10, family: 'Inter' }, color: '#9ca3af' }, grid: { color: '#f3f4f6' } },
+          x: { ticks: { font: { size: 10, family: 'Inter' }, color: '#9ca3af', maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  // ── State performance (horizontal bar, top 8) ───────────────────────────
+  const sCtx = document.getElementById('glanceStateChart')?.getContext('2d');
+  if (sCtx) {
+    if (gStateChart) { gStateChart.destroy(); gStateChart = null; }
+    const sorted = Object.entries(stateCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    gStateChart = new Chart(sCtx, {
+      type: 'bar',
+      data: {
+        labels: sorted.map(s => s[0]),
+        datasets: [{ data: sorted.map(s => s[1]), backgroundColor: '#34d399', borderRadius: 4, borderWidth: 0 }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0, font: { size: 10, family: 'Inter' }, color: '#9ca3af' }, grid: { color: '#f3f4f6' } },
+          y: { ticks: { font: { size: 11, family: 'Inter' }, color: '#374151' }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  // ── Election type distribution (HTML bars) ──────────────────────────────
+  const typeWrap = document.getElementById('glance-type-bars');
+  if (typeWrap) {
+    const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+    const palette = ['#6366f1', '#7c3aed', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
+    if (!sortedTypes.length) {
+      typeWrap.innerHTML = '<p class="text-[12px] text-gray-400 text-center py-3">No data</p>';
+    } else {
+      typeWrap.innerHTML = sortedTypes.map(([ty, cnt], i) => {
+        const pct  = total ? Math.round((cnt / total) * 100) : 0;
+        const name = EL_TYPE_NAMES[ty] || ty;
+        const col  = palette[i % palette.length];
+        return `
+          <div class="flex items-center gap-3">
+            <div class="w-28 shrink-0 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full shrink-0" style="background:${col}"></span>
+              <span class="text-[12px] font-semibold text-gray-700">${ty}</span>
+              <span class="text-[11px] text-gray-400">${name}</span>
+            </div>
+            <div class="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full rounded-full bar-fill" style="width:${pct}%;background:${col}"></div>
+            </div>
+            <div class="w-16 shrink-0 text-right">
+              <span class="text-[12px] font-bold text-gray-800 tabular-nums">${cnt}</span>
+              <span class="text-[11px] text-gray-400 ml-1">${pct}%</span>
+            </div>
+          </div>`;
+      }).join('');
+    }
+  }
 }
 
 function togglePanelWeek(i) {
-    const body = document.getElementById('panel-week-body-' + i);
-    const chevron = document.querySelector('.panel-week-chevron-' + i);
-    if (!body) return;
-    const hidden = body.classList.toggle('hidden');
-    if (chevron) chevron.textContent = hidden ? 'expand_more' : 'expand_less';
+  const body    = document.getElementById('panel-week-body-' + i);
+  const chevron = document.querySelector('.panel-week-chevron-' + i);
+  if (!body) return;
+  const hidden = body.classList.toggle('hidden');
+  if (chevron) chevron.textContent = hidden ? 'expand_more' : 'expand_less';
 }

@@ -1,653 +1,857 @@
 <!DOCTYPE html>
 <html class="light" lang="en">
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>Form 20 Operations Dashboard</title>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        slate: {
-                            50: "#f8fafc", 100: "#f1f5f9", 200: "#e2e8f0", 300: "#cbd5e1", 400: "#94a3b8",
-                            500: "#64748b", 600: "#475569", 700: "#334155", 800: "#1e293b", 900: "#0f172a"
-                        }
-                    },
-                    fontFamily: {
-                        headline: ["Inter", "sans-serif"],
-                        display: ["Inter", "sans-serif"],
-                        body: ["Inter", "sans-serif"],
-                        label: ["Inter", "sans-serif"]
-                    }
-                }
-            }
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Form 20 Operations Dashboard</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] }
         }
-    </script>
-    <link rel="stylesheet" href="/static/style.css" />
-    <style>
-        body {
-            background-color: #f8fafc;
-            color: #0f172a;
-            font-family: 'Inter', sans-serif;
-            overflow: hidden;
-        }
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
-            font-size: 18px;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-        .table-row-hover:hover {
-            background-color: #f1f5f9;
-        }
-        .selected-row {
-            background-color: #f1f5f9;
-        }
-    </style>
-</head>
-<body class="antialiased font-body">
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="/static/style.css"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      background: #f5f5f5;
+      color: #111827;
+      font-family: 'Inter', system-ui, sans-serif;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+      font-size: 18px;
+      vertical-align: middle;
+      line-height: 1;
+    }
 
-<!-- TopNavBar -->
-<nav class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 h-[44px] transition-colors duration-150">
-    <div class="flex items-center gap-8">
-        <span class="text-[14px] font-headline font-black tracking-tighter text-slate-800 dark:text-slate-200">Form 20 Backlog Tracker</span>
-        <div class="hidden md:flex items-center h-[44px] gap-1">
-            <a id="nav-dashboard" class="nav-tab text-slate-900 dark:text-white font-bold border-b-2 border-slate-800 dark:border-slate-400 h-full flex items-center px-2 font-body text-[12.5px] tracking-tight cursor-pointer">Dashboard</a>
-            <a id="nav-listing" class="nav-tab text-slate-500 dark:text-slate-400 font-medium h-full flex items-center px-2 hover:bg-slate-50 dark:hover:bg-slate-800 font-body text-[12.5px] tracking-tight transition-colors duration-150 cursor-pointer">Listing</a>
-            <a id="nav-retro" class="text-slate-500 dark:text-slate-400 font-medium h-full flex items-center px-2 hover:bg-slate-50 dark:hover:bg-slate-800 font-body text-[12.5px] tracking-tight transition-colors duration-150 cursor-pointer">Retro Export</a>
-            <a id="nav-glance" class="text-slate-500 dark:text-slate-400 font-medium h-full flex items-center px-2 gap-1 hover:bg-slate-50 dark:hover:bg-slate-800 font-body text-[12.5px] tracking-tight transition-colors duration-150 cursor-pointer">
-                <span class="material-symbols-outlined" style="font-size:14px;">fact_check</span>
-                Glance Report
-            </a>
-        </div>
+    /* ── Scrollbar ── */
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+    /* ── Nav tabs ── */
+    .nav-tab {
+      position: relative;
+      transition: color 0.1s, background 0.1s;
+    }
+    .nav-tab.active {
+      color: #111827;
+      font-weight: 600;
+    }
+    .nav-tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #111827;
+      border-radius: 2px 2px 0 0;
+    }
+    .nav-tab:not(.active) { color: #6b7280; }
+    .nav-tab:not(.active):hover { color: #374151; background: #f9fafb; }
+
+    /* ── Sidebar links ── */
+    .sidelink {
+      transition: all 0.1s;
+      border-left: 2px solid transparent;
+    }
+    .sidelink.sl-active {
+      background: #f4f4f5;
+      color: #111827;
+      font-weight: 600;
+      border-left-color: #111827;
+    }
+    .sidelink:not(.sl-active):hover {
+      background: #fafafa;
+      color: #374151;
+    }
+    .sidelink.sl-wip-active {
+      background: #fffbeb;
+      color: #92400e;
+      font-weight: 600;
+      border-left-color: #f59e0b;
+    }
+
+    /* ── Table rows ── */
+    .trow:hover { background: #fafafa; }
+    .trow-selected { background: #f4f4f5; }
+
+    /* ── Status badges ── */
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; border-width: 1px; border-style: solid; }
+    .badge-missing    { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .badge-pending    { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+    .badge-downloaded { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+    .badge-extracted  { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+    .badge-db_pushed, .badge-completed { background: #f0fdf4; color: #14532d; border-color: #bbf7d0; }
+
+    /* ── KPI card active states ── */
+    .kpi-active-blue   { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
+    .kpi-active-violet { border-color: #7c3aed !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.12); }
+    .kpi-active-red    { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.12); }
+
+    /* ── Animated bars ── */
+    .bar-fill { transition: width 0.9s cubic-bezier(.4,0,.2,1); }
+
+    /* ── Pipeline stage ── */
+    .pipe-cell {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #e5e7eb;
+    }
+    .pipe-cell:first-child { border-radius: 8px 0 0 8px; }
+    .pipe-cell:last-child  { border-radius: 0 8px 8px 0; border-left: none; }
+    .pipe-cell + .pipe-cell { border-left: none; }
+
+    /* ── Card base ── */
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; }
+
+    /* ── Input base ── */
+    .sel {
+      height: 28px;
+      padding: 0 10px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #374151;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.1s;
+    }
+    .sel:hover { border-color: #d1d5db; }
+    .sel:focus { border-color: #9ca3af; }
+    .sel:disabled { background: #f9fafb; color: #d1d5db; cursor: not-allowed; }
+  </style>
+</head>
+<body class="antialiased">
+
+<!-- ═══════════════════════════════════
+     TOP NAVIGATION  48px
+═══════════════════════════════════ -->
+<nav class="fixed top-0 left-0 w-full z-50 h-[48px] bg-white border-b border-gray-200 flex items-center justify-between px-5">
+
+  <div class="flex items-center gap-5 h-full">
+    <!-- Logo -->
+    <div class="flex items-center gap-2 shrink-0">
+      <div class="w-6 h-6 rounded-md bg-gray-900 flex items-center justify-center">
+        <span class="material-symbols-outlined text-white" style="font-size:13px;">ballot</span>
+      </div>
+      <span class="text-[13px] font-semibold text-gray-900 tracking-tight">Form 20 Tracker</span>
     </div>
-    <div class="flex items-center gap-3">
-        <div class="relative hidden sm:block">
-            <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">search</span>
-            <input id="global-search" class="h-7 w-64 bg-slate-50 border border-slate-200 pl-8 pr-2 text-[12px] focus:ring-0 focus:border-slate-400 transition-all outline-none rounded" placeholder="Global search..." type="text"/>
+
+    <div class="w-px h-4 bg-gray-200 shrink-0"></div>
+
+    <!-- Tabs -->
+    <div class="hidden md:flex items-center h-full">
+      <a id="nav-dashboard" class="nav-tab active h-full px-3 flex items-center text-[13px] cursor-pointer select-none">Dashboard</a>
+      <a id="nav-listing"   class="nav-tab        h-full px-3 flex items-center text-[13px] cursor-pointer select-none">Listing</a>
+      <a id="nav-retro"     class="nav-tab        h-full px-3 flex items-center text-[13px] cursor-pointer select-none">Retro Export</a>
+      <a id="nav-glance"    class="nav-tab        h-full px-3 flex items-center gap-1.5 text-[13px] cursor-pointer select-none">
+        <span class="material-symbols-outlined text-gray-400" style="font-size:14px;">fact_check</span>
+        Glance Report
+      </a>
     </div>
+  </div>
+
+  <!-- Right: Global Search -->
+  <div class="flex items-center gap-2">
+    <div class="relative hidden sm:block">
+      <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" style="font-size:14px;">search</span>
+      <input id="global-search" type="text" placeholder="Search records…"
+        class="h-8 w-56 bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 text-[12.5px] text-gray-700 placeholder-gray-400 outline-none focus:border-gray-400 focus:bg-white transition-all"/>
+    </div>
+  </div>
 </nav>
 
-<!-- Main Layout Shell -->
-<div class="flex h-screen pt-[44px]">
-    <!-- SideNavBar -->
-    <aside class="fixed left-0 top-[44px] w-64 h-[calc(100vh-44px)] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col gap-1 py-4 z-40 transition-all duration-75">
-        <div class="px-6 mb-4">
-            <p class="font-body text-[11px] uppercase tracking-widest text-slate-400">FILTER STATUS</p>
-            <p class="text-[10px] text-slate-500">Operational Workflow</p>
+
+<!-- ═══════════════════════════════════
+     MAIN LAYOUT  (below 48px nav)
+═══════════════════════════════════ -->
+<div class="flex h-screen pt-[48px]">
+
+  <!-- ══════════════════════
+       SIDEBAR  216px
+  ══════════════════════ -->
+  <aside class="fixed left-0 top-[48px] w-[216px] h-[calc(100vh-48px)] bg-white border-r border-gray-200 flex flex-col z-40 shrink-0">
+
+    <div class="px-4 pt-5 pb-2">
+      <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Pipeline Stages</p>
+    </div>
+
+    <nav class="flex flex-col gap-0.5 px-2 sidebar-nav flex-1 overflow-y-auto">
+
+      <a data-view="all" class="sidelink sl-active flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer" href="#">
+        <div class="flex items-center gap-2.5">
+          <span class="material-symbols-outlined text-gray-500" style="font-size:15px;">list_alt</span>
+          <span class="text-[12.5px]">All Records</span>
         </div>
-        
-        <nav class="flex flex-col gap-1 sidebar-nav">
-            <a data-view="all" class="sidelink bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold border-l-2 border-slate-800 dark:border-slate-400 flex items-center justify-between px-4 py-2 transition-all duration-75" href="#">
-                <div class="flex items-center">
-                    <span class="material-symbols-outlined mr-3 text-slate-800 dark:text-white">list_alt</span>
-                    <span class="font-body text-[11px] uppercase tracking-widest">All Records</span>
-                </div>
-                <span class="text-[10px] text-slate-500" id="sl-all-count"></span>
-            </a>
-            <a data-view="missing" class="sidelink text-slate-500 dark:text-slate-400 flex items-center justify-between px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all duration-75 border-l-2 border-transparent" href="#">
-                <div class="flex items-center">
-                    <span class="material-symbols-outlined mr-3">block</span>
-                    <span class="font-body text-[11px] uppercase tracking-widest">Missing</span>
-                </div>
-                <span class="text-[10px] text-slate-400" id="sl-mi-count"></span>
-            </a>
+        <span class="text-[11px] text-gray-400 tabular-nums font-medium" id="sl-all-count"></span>
+      </a>
 
-            <a data-view="downloaded" class="sidelink text-slate-500 dark:text-slate-400 flex items-center justify-between px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all duration-75 border-l-2 border-transparent" href="#">
-                <div class="flex items-center">
-                    <span class="material-symbols-outlined mr-3">download_done</span>
-                    <span class="font-body text-[11px] uppercase tracking-widest">Downloaded</span>
-                </div>
-                <span class="text-[10px] text-slate-400" id="sl-dl-count"></span>
-            </a>
-            <a data-view="extracted" class="sidelink text-slate-500 dark:text-slate-400 flex items-center justify-between px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all duration-75 border-l-2 border-transparent" href="#">
-                <div class="flex items-center">
-                    <span class="material-symbols-outlined mr-3">database</span>
-                    <span class="font-body text-[11px] uppercase tracking-widest">Extraction</span>
-                </div>
-                <span class="text-[10px] text-slate-400" id="sl-ex-count"></span>
-            </a>
-            
-            <a data-view="wip" class="sidelink text-slate-500 dark:text-slate-400 flex items-center justify-between px-4 py-2 mt-4 hover:bg-amber-50 dark:hover:bg-slate-800 transition-all duration-75 border-l-2 border-transparent" href="#">
-                <div class="flex items-center">
-                    <span class="material-symbols-outlined mr-3 text-amber-500">hourglass_top</span>
-                    <span class="font-body text-[11px] uppercase tracking-widest text-amber-700">LF In Progress</span>
-                </div>
-                <span class="text-[10px] text-amber-600 font-bold" id="sl-wip-count"></span>
-            </a>
-        </nav>
-
-        <div class="mt-auto px-6 py-4">
-            <div class="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <p class="text-[10px] font-bold text-slate-800 uppercase tracking-tighter mb-1">Total Progress</p>
-                <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                    <div id="progress-bar-fill" class="bg-slate-800 h-full w-[0%] transition-all duration-500"></div>
-                </div>
-                <p class="text-[10px] text-slate-500 mt-1" id="progress-text">0 / 0 Completed</p>
-            </div>
+      <a data-view="missing" class="sidelink flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-gray-500" href="#">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2 h-2 rounded-full bg-gray-300 shrink-0"></span>
+          <span class="text-[12.5px]">Missing</span>
         </div>
-    </aside>
+        <span class="text-[11px] text-gray-400 tabular-nums font-medium" id="sl-mi-count"></span>
+      </a>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 ml-64 bg-slate-50 dark:bg-slate-950 flex flex-col min-h-0 relative">
-        
-        <!-- Listing View (hidden by default; Dashboard opens first) -->
-        <div id="listing-view" class="hidden flex-col h-full w-full">
-        
-        <!-- Header Bar -->
-        <div class="h-[52px] bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-30 shrink-0">
-            <div class="flex items-center gap-4">
-                <h1 class="text-sm font-bold text-slate-800">Operational Grid</h1>
-                <div class="h-4 w-[1px] bg-slate-200"></div>
-                <span class="text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded" id="record-count-badge">0 Total Records</span>
+      <a data-view="downloaded" class="sidelink flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-gray-500" href="#">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span>
+          <span class="text-[12.5px]">Downloaded</span>
+        </div>
+        <span class="text-[11px] text-gray-400 tabular-nums font-medium" id="sl-dl-count"></span>
+      </a>
+
+      <a data-view="extracted" class="sidelink flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-gray-500" href="#">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2 h-2 rounded-full bg-violet-400 shrink-0"></span>
+          <span class="text-[12.5px]">Extraction</span>
+        </div>
+        <span class="text-[11px] text-gray-400 tabular-nums font-medium" id="sl-ex-count"></span>
+      </a>
+
+      <div class="h-px bg-gray-100 my-1 mx-1"></div>
+
+      <a data-view="wip" class="sidelink flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-gray-500" href="#">
+        <div class="flex items-center gap-2.5">
+          <span class="material-symbols-outlined text-amber-400" style="font-size:15px;">hourglass_top</span>
+          <span class="text-[12.5px] text-amber-700 font-medium">LF In Progress</span>
+        </div>
+        <span class="text-[11px] text-amber-500 tabular-nums font-semibold" id="sl-wip-count"></span>
+      </a>
+
+    </nav>
+
+    <!-- Progress footer -->
+    <div class="p-4 border-t border-gray-100 shrink-0">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider">Progress</span>
+        <span class="text-[11px] font-bold text-gray-800 tabular-nums" id="progress-pct-sidebar">0%</span>
+      </div>
+      <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div id="progress-bar-fill" class="h-full bg-gray-800 rounded-full bar-fill" style="width:0%"></div>
+      </div>
+      <p class="text-[10.5px] text-gray-400 mt-1.5 tabular-nums" id="progress-text">0 / 0 completed</p>
+    </div>
+
+  </aside>
+
+
+  <!-- ══════════════════════
+       MAIN CONTENT
+  ══════════════════════ -->
+  <main class="flex-1 ml-[216px] flex flex-col min-h-0 overflow-hidden bg-gray-50">
+
+
+    <!-- ══════════════════════════════════════════
+         LISTING VIEW
+    ══════════════════════════════════════════ -->
+    <div id="listing-view" class="hidden flex-col h-full w-full">
+
+      <!-- Header Bar -->
+      <div class="h-[50px] bg-white border-b border-gray-200 flex items-center justify-between px-5 sticky top-0 z-30 shrink-0">
+        <div class="flex items-center gap-3">
+          <h1 class="text-[13px] font-semibold text-gray-900">Operational Grid</h1>
+          <span class="text-[11px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md tabular-nums" id="record-count-badge">— records</span>
+        </div>
+
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <select id="filter-state" class="sel">
+            <option value="">All States</option>
+          </select>
+          <select id="filter-type" class="sel">
+            <option value="">All Types</option>
+          </select>
+          <select id="filter-year" class="sel">
+            <option value="">All Years</option>
+          </select>
+          <label class="flex items-center gap-1.5 h-7 px-2.5 border border-gray-200 bg-white rounded-lg hover:border-gray-300 cursor-pointer text-[12px] font-medium text-gray-600 transition-colors select-none">
+            <input type="checkbox" id="filter-sir" class="w-3 h-3 rounded border-gray-300 text-gray-800 focus:ring-0 cursor-pointer"/>
+            SIR Only
+          </label>
+          <button id="toggle-bp-btn" class="h-7 px-2.5 text-[12px] font-medium border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-all flex items-center gap-1.5 text-gray-500 select-none">
+            <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">filter_alt</span>
+            Show BP
+          </button>
+          <button id="clear-filters" class="h-7 px-2.5 text-[12px] font-medium text-gray-400 hover:text-gray-700 transition-colors select-none">Clear</button>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="px-5 py-3 bg-white border-b border-gray-100 grid grid-cols-3 gap-3 shrink-0">
+
+        <button id="kpi-downloaded" onclick="handleKpiClick('downloaded')"
+          class="kpi-card group flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-gray-300 transition-all text-left bg-white">
+          <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+            <span class="material-symbols-outlined text-blue-500" style="font-size:16px;">download_done</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Downloaded</p>
+            <p class="text-[18px] font-bold text-gray-900 leading-tight tabular-nums" id="kpi-dl-count">—</p>
+          </div>
+          <span class="material-symbols-outlined text-gray-200 group-hover:text-blue-300 ml-auto transition-colors" style="font-size:14px;">arrow_forward</span>
+        </button>
+
+        <button id="kpi-extracted" onclick="handleKpiClick('extracted')"
+          class="kpi-card group flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-gray-300 transition-all text-left bg-white">
+          <div class="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition-colors">
+            <span class="material-symbols-outlined text-violet-500" style="font-size:16px;">database</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Extracted</p>
+            <p class="text-[18px] font-bold text-gray-900 leading-tight tabular-nums" id="kpi-ex-count">—</p>
+          </div>
+          <span class="material-symbols-outlined text-gray-200 group-hover:text-violet-300 ml-auto transition-colors" style="font-size:14px;">arrow_forward</span>
+        </button>
+
+        <button id="kpi-missing" onclick="handleKpiClick('missing')"
+          class="kpi-card group flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-gray-300 transition-all text-left bg-white">
+          <div class="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0 group-hover:bg-red-100 transition-colors">
+            <span class="material-symbols-outlined text-red-400" style="font-size:16px;">error_outline</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Missing</p>
+            <p class="text-[18px] font-bold text-gray-900 leading-tight tabular-nums" id="kpi-mi-count">—</p>
+          </div>
+          <span class="material-symbols-outlined text-gray-200 group-hover:text-red-300 ml-auto transition-colors" style="font-size:14px;">arrow_forward</span>
+        </button>
+
+      </div>
+
+      <!-- Back to States header (hidden by default) -->
+      <div id="detail-header" class="hidden h-[40px] bg-gray-50 border-b border-gray-200 flex items-center px-5 shrink-0">
+        <button onclick="goBackToStates()" class="flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
+          <span class="material-symbols-outlined" style="font-size:13px;">arrow_back</span>
+          All States
+        </button>
+        <div class="h-3.5 w-px bg-gray-300 mx-3"></div>
+        <span class="text-[12px] font-semibold text-gray-800 flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">map</span>
+          <span id="detail-state-name">State</span>
+        </span>
+      </div>
+
+      <!-- Data Table -->
+      <div class="flex-1 overflow-auto custom-scrollbar">
+        <table class="w-full text-left border-collapse min-w-[900px]">
+          <thead id="table-head" class="sticky top-0 bg-white border-b border-gray-200 z-20">
+            <tr>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="state">Record ID</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Location</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="assigned_to">Assigned To</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="last_updated">Updated</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-50" id="table-body">
+            <tr>
+              <td colspan="7" class="px-5 py-12 text-center">
+                <div class="flex flex-col items-center gap-2 text-gray-400">
+                  <span class="material-symbols-outlined animate-spin" style="font-size:22px;">refresh</span>
+                  <span class="text-[12px]">Loading records…</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Footer -->
+      <div class="bg-white border-t border-gray-200 px-5 py-2.5 flex items-center justify-between shrink-0">
+        <span class="text-[11.5px] text-gray-500 font-medium" id="pagination-text">Showing 0 records</span>
+      </div>
+
+    </div><!-- /listing-view -->
+
+
+    <!-- ══════════════════════════════════════════
+         DASHBOARD VIEW
+    ══════════════════════════════════════════ -->
+    <div id="dashboard-view" class="flex flex-col w-full h-full overflow-y-auto custom-scrollbar">
+
+      <!-- Dashboard sub-header -->
+      <div class="sticky top-0 z-30 bg-white border-b border-gray-200 px-5 h-[48px] flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2.5">
+          <h1 class="text-[13px] font-semibold text-gray-900">Analytics Dashboard</h1>
+          <span class="w-1 h-1 rounded-full bg-gray-300"></span>
+          <span class="text-[12px] text-gray-400">Form 20 Backlog · Live</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button id="dash-sir-btn" class="h-7 px-2.5 text-[12px] font-medium border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-all flex items-center gap-1.5 text-gray-500 select-none">
+            <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">priority_high</span>
+            SIR Only
+          </button>
+          <button id="dash-bp-btn" class="h-7 px-2.5 text-[12px] font-medium border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-all flex items-center gap-1.5 text-gray-500 select-none">
+            <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">filter_alt</span>
+            Show BP Years
+          </button>
+          <div class="w-px h-4 bg-gray-200 mx-0.5"></div>
+          <select id="dash-month-filter" class="sel">
+            <option value="">All Time</option>
+          </select>
+          <button id="dash-refresh-btn" class="h-7 w-7 flex items-center justify-center border border-gray-200 bg-white rounded-lg hover:bg-gray-50 transition-colors">
+            <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">refresh</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Dashboard content -->
+      <div class="p-5 flex flex-col gap-4 pb-10">
+
+        <!-- KPI Row: 4 cards -->
+        <div class="grid grid-cols-4 gap-3">
+
+          <div class="card p-4">
+            <div class="flex items-start justify-between mb-3">
+              <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Total Records</p>
+              <div class="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-gray-500" style="font-size:14px;">inventory_2</span>
+              </div>
             </div>
-            
+            <p class="text-[28px] font-bold text-gray-900 leading-none tabular-nums" id="dash-total">—</p>
+            <p class="text-[11px] text-gray-400 mt-2">All elections tracked</p>
+          </div>
+
+          <div class="card p-4">
+            <div class="flex items-start justify-between mb-3">
+              <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">DB Pushed</p>
+              <div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-emerald-500" style="font-size:14px;">database</span>
+              </div>
+            </div>
+            <p class="text-[28px] font-bold text-emerald-600 leading-none tabular-nums" id="dash-db-pushed">—</p>
+            <div class="mt-2.5 flex items-center gap-2">
+              <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div id="dash-prog-bar-kpi" class="h-full bg-emerald-400 rounded-full bar-fill" style="width:0%"></div>
+              </div>
+              <span class="text-[11px] font-semibold text-emerald-600 tabular-nums" id="dash-progress-pct">0%</span>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="flex items-start justify-between mb-3">
+              <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Downloaded</p>
+              <div class="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-blue-500" style="font-size:14px;">download_done</span>
+              </div>
+            </div>
+            <p class="text-[28px] font-bold text-blue-600 leading-none tabular-nums" id="dash-downloaded">—</p>
+            <p class="text-[11px] text-gray-400 mt-2">Awaiting extraction</p>
+          </div>
+
+          <div class="card p-4">
+            <div class="flex items-start justify-between mb-3">
+              <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Missing</p>
+              <div class="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-red-400" style="font-size:14px;">error_outline</span>
+              </div>
+            </div>
+            <p class="text-[28px] font-bold text-red-500 leading-none tabular-nums" id="dash-missing">—</p>
+            <p class="text-[11px] text-gray-400 mt-2">Not yet downloaded</p>
+          </div>
+
+        </div>
+
+        <!-- Overall Progress -->
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2">
-                <!-- Inline Filters -->
-                <select id="filter-state" class="h-7 px-2 py-0 text-[11px] font-medium text-slate-600 border border-slate-200 bg-white rounded focus:ring-0 focus:border-slate-300 hover:border-slate-300 outline-none cursor-pointer">
-                    <option value="">All States</option>
-                </select>
-                <select id="filter-type" class="h-7 px-2 py-0 text-[11px] font-medium text-slate-600 border border-slate-200 bg-white rounded focus:ring-0 focus:border-slate-300 hover:border-slate-300 outline-none cursor-pointer">
-                    <option value="">All Types</option>
-                </select>
-                <select id="filter-year" class="h-7 px-2 py-0 text-[11px] font-medium text-slate-600 border border-slate-200 bg-white rounded focus:ring-0 focus:border-slate-300 hover:border-slate-300 outline-none cursor-pointer">
-                    <option value="">All Years</option>
-                </select>
-                <label class="flex items-center gap-1.5 h-7 px-2 border border-slate-200 bg-white rounded hover:border-slate-300 transition-colors cursor-pointer text-[11px] font-medium text-slate-600">
-                    <input type="checkbox" id="filter-sir" class="rounded border-slate-300 text-slate-800 focus:ring-slate-800 w-3 h-3 cursor-pointer" />
-                    SIR Only
-                </label>
-                <!-- BP Years Toggle -->
-                <button id="toggle-bp-btn" title="Toggle BP election years" class="h-7 px-2.5 text-[11px] font-semibold border rounded transition-all duration-150 flex items-center gap-1 bg-white text-slate-500 border-slate-200 hover:bg-slate-50">
-                    <span class="material-symbols-outlined" style="font-size:14px;">filter_alt</span>
-                    Show BP Years
-                </button>
-                <button id="clear-filters" class="h-7 px-2 text-[11px] font-medium text-slate-500 hover:text-slate-800 transition-colors">Clear</button>
+              <span class="material-symbols-outlined text-gray-400" style="font-size:15px;">task_alt</span>
+              <p class="text-[12.5px] font-semibold text-gray-900">Overall Progress</p>
             </div>
+            <p class="text-[11.5px] text-gray-400 font-medium" id="dash-progress-sub">0 / 0 records pushed to DB</p>
+          </div>
+
+          <!-- Pipeline stages -->
+          <div class="flex items-stretch mb-3">
+            <div class="pipe-cell bg-gray-50">
+              <p class="text-[9.5px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Missing</p>
+              <p class="text-[16px] font-bold text-gray-700 tabular-nums" id="pipe-missing">—</p>
+            </div>
+            <div class="flex items-center justify-center w-6 bg-gray-50 border-t border-b border-gray-200 shrink-0">
+              <span class="material-symbols-outlined text-gray-300" style="font-size:13px;">chevron_right</span>
+            </div>
+            <div class="pipe-cell bg-blue-50">
+              <p class="text-[9.5px] font-semibold text-blue-400 uppercase tracking-wider mb-1">Downloaded</p>
+              <p class="text-[16px] font-bold text-blue-700 tabular-nums" id="pipe-downloaded">—</p>
+            </div>
+            <div class="flex items-center justify-center w-6 bg-blue-50 border-t border-b border-gray-200 shrink-0">
+              <span class="material-symbols-outlined text-gray-300" style="font-size:13px;">chevron_right</span>
+            </div>
+            <div class="pipe-cell bg-violet-50">
+              <p class="text-[9.5px] font-semibold text-violet-400 uppercase tracking-wider mb-1">Extracted</p>
+              <p class="text-[16px] font-bold text-violet-700 tabular-nums" id="pipe-extracted">—</p>
+            </div>
+            <div class="flex items-center justify-center w-6 bg-violet-50 border-t border-b border-gray-200 shrink-0">
+              <span class="material-symbols-outlined text-gray-300" style="font-size:13px;">chevron_right</span>
+            </div>
+            <div class="pipe-cell bg-emerald-50" style="border-left:none">
+              <p class="text-[9.5px] font-semibold text-emerald-500 uppercase tracking-wider mb-1">DB Pushed</p>
+              <p class="text-[16px] font-bold text-emerald-700 tabular-nums" id="pipe-db-pushed">—</p>
+            </div>
+          </div>
+
+          <!-- Progress bar -->
+          <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div id="dash-prog-bar" class="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full bar-fill" style="width:0%"></div>
+          </div>
         </div>
 
-        <!-- KPI Summary Cards -->
-        <div class="px-6 py-3 bg-white border-b border-slate-100 grid grid-cols-3 gap-3 shrink-0">
-            <!-- Downloaded -->
-            <button id="kpi-downloaded" onclick="handleKpiClick('downloaded')" class="kpi-card group flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all duration-150 bg-white text-left">
-                <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
-                    <span class="material-symbols-outlined text-blue-500" style="font-size:18px;">download_done</span>
-                </div>
-                <div class="min-w-0">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Downloaded</p>
-                    <p class="text-[20px] font-black text-slate-800 leading-tight" id="kpi-dl-count">—</p>
-                </div>
-                <div class="ml-auto">
-                    <span class="material-symbols-outlined text-slate-300 group-hover:text-blue-400 transition-colors" style="font-size:16px;">arrow_forward</span>
-                </div>
-            </button>
-            <!-- Extracted -->
-            <button id="kpi-extracted" onclick="handleKpiClick('extracted')" class="kpi-card group flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-purple-300 hover:shadow-sm transition-all duration-150 bg-white text-left">
-                <div class="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center shrink-0 group-hover:bg-purple-100 transition-colors">
-                    <span class="material-symbols-outlined text-purple-500" style="font-size:18px;">database</span>
-                </div>
-                <div class="min-w-0">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Extracted</p>
-                    <p class="text-[20px] font-black text-slate-800 leading-tight" id="kpi-ex-count">—</p>
-                </div>
-                <div class="ml-auto">
-                    <span class="material-symbols-outlined text-slate-300 group-hover:text-purple-400 transition-colors" style="font-size:16px;">arrow_forward</span>
-                </div>
-            </button>
-            <!-- Missing -->
-            <button id="kpi-missing" onclick="handleKpiClick('missing')" class="kpi-card group flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-red-300 hover:shadow-sm transition-all duration-150 bg-white text-left">
-                <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center shrink-0 group-hover:bg-red-100 transition-colors">
-                    <span class="material-symbols-outlined text-red-500" style="font-size:18px;">error_outline</span>
-                </div>
-                <div class="min-w-0">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Missing</p>
-                    <p class="text-[20px] font-black text-slate-800 leading-tight" id="kpi-mi-count">—</p>
-                </div>
-                <div class="ml-auto">
-                    <span class="material-symbols-outlined text-slate-300 group-hover:text-red-400 transition-colors" style="font-size:16px;">arrow_forward</span>
-                </div>
-            </button>
+        <!-- Charts Row -->
+        <div class="grid grid-cols-5 gap-4">
+
+          <!-- Monthly trend (3/5) -->
+          <div class="col-span-3 card p-4">
+            <div class="flex items-center justify-between mb-4">
+              <p class="text-[12.5px] font-semibold text-gray-900">Monthly DB Push Trend</p>
+              <span class="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">records / month</span>
+            </div>
+            <div class="relative" style="height:180px">
+              <canvas id="monthlyBarChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Status breakdown (2/5) -->
+          <div class="col-span-2 card p-4">
+            <p class="text-[12.5px] font-semibold text-gray-900 mb-4">Status Breakdown</p>
+            <div class="relative" style="height:180px">
+              <canvas id="statusPieChart"></canvas>
+            </div>
+          </div>
+
         </div>
 
-        <!-- Detail View Back Header (Hidden by default) -->
-        <div id="detail-header" class="hidden h-10 bg-indigo-50/50 border-b border-slate-200 flex items-center px-6 shrink-0 transition-all">
-            <button onclick="goBackToStates()" class="text-[12px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1.5 transition-colors bg-white px-2.5 py-1 rounded shadow-sm border border-indigo-200">
-                <span class="material-symbols-outlined text-[16px]">arrow_back</span>
-                Back to States
-            </button>
-            <div class="h-4 w-[1px] bg-slate-300 mx-4"></div>
-            <span class="text-[12px] font-bold text-slate-800 flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[14px] text-slate-400">map</span>
-                <span id="detail-state-name">State Name</span>
-            </span>
+        <!-- Weekly Velocity -->
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <p class="text-[12.5px] font-semibold text-gray-900">Weekly DB Push Velocity</p>
+              <p class="text-[11px] text-gray-400 mt-0.5" id="weekly-chart-subtitle">All weeks since tracking began</p>
+            </div>
+            <div class="flex items-center gap-1.5 text-[11px] text-gray-400">
+              <span class="w-2.5 h-2.5 rounded-sm bg-indigo-200 inline-block"></span>
+              DB Pushed / week
+            </div>
+          </div>
+          <div class="relative" style="height:140px">
+            <canvas id="weeklyBarChart"></canvas>
+          </div>
         </div>
 
-        <!-- Dense Data-Grid Area -->
-        <div class="flex-1 overflow-auto custom-scrollbar relative">
-            <table class="w-full text-left border-collapse min-w-[1000px]">
-                <thead id="table-head" class="sticky top-0 bg-white border-b border-slate-200 z-20 shadow-sm">
-                    <tr>
-                        <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider sortable cursor-pointer hover:bg-slate-50" data-col="state">Record ID</th>
-                        <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                        <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Location Details</th>
-                        <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider sortable cursor-pointer hover:bg-slate-50" data-col="assigned_to">Assigned To</th>
-                        <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider sortable cursor-pointer hover:bg-slate-50" data-col="last_updated">Activity</th>
-                        <th class="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-slate-100" id="table-body">
-                    <tr><td colspan="7" class="px-6 py-8 text-center text-slate-500 text-[13px]">
-                        <span class="material-symbols-outlined animate-spin block mx-auto mb-2">refresh</span> Loading...
-                    </td></tr>
-                </tbody>
-            </table>
+      </div><!-- /dashboard content -->
+    </div><!-- /dashboard-view -->
+
+
+    <!-- ══════════════════════════════════════════
+         GLANCE REPORT VIEW
+    ══════════════════════════════════════════ -->
+    <div id="glance-view" class="hidden flex-col h-full overflow-y-auto custom-scrollbar">
+
+      <!-- Header with inline filters -->
+      <div class="bg-white border-b border-gray-200 px-5 h-[50px] flex items-center justify-between sticky top-0 z-10 shrink-0">
+        <div class="flex items-center gap-2.5">
+          <span class="material-symbols-outlined text-gray-400" style="font-size:15px;">fact_check</span>
+          <h2 class="text-[13px] font-semibold text-gray-900">Glance Report</h2>
+          <span class="text-[11px] font-semibold bg-indigo-50 text-indigo-600 px-2.5 py-0.5 rounded-full tabular-nums" id="glance-panel-count">— records</span>
         </div>
-
-        <!-- Pagination Footer -->
-        <div class="bg-white border-t border-slate-200 p-3 flex items-center justify-between z-30 shrink-0">
-            <span class="text-[11px] text-slate-500 font-medium" id="pagination-text">Showing 0 records</span>
+        <div class="flex items-center gap-1.5">
+          <select id="glance-month-filter" class="sel">
+            <option value="">All Months</option>
+          </select>
+          <select id="glance-state-filter" class="sel">
+            <option value="">All States</option>
+          </select>
+          <select id="glance-type-filter" class="sel">
+            <option value="">All Types</option>
+          </select>
+          <div class="w-px h-4 bg-gray-200 mx-0.5"></div>
+          <button id="glance-pdf-btn" class="h-7 px-2.5 text-[12px] font-semibold border border-gray-900 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-all flex items-center gap-1.5 select-none">
+            <span class="material-symbols-outlined" style="font-size:14px;">picture_as_pdf</span>
+            Download PDF
+          </button>
         </div>
-        </div><!-- end listing-view -->
+      </div>
 
-        <!-- ========== DASHBOARD VIEW ========== -->
-        <div id="dashboard-view" class="flex flex-col w-full min-h-full overflow-y-auto" style="background:linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)">
+      <!-- Analytics content -->
+      <div class="p-5 flex flex-col gap-4 pb-10">
 
-            <!-- Dashboard Topbar -->
-            <div class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-slate-100 px-6 py-3 flex items-center justify-between shrink-0">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                        <span class="material-symbols-outlined text-white" style="font-size:16px;">bar_chart</span>
-                    </div>
-                    <div>
-                        <h1 class="text-sm font-bold text-slate-800">Analytics Dashboard</h1>
-                        <p class="text-[10px] text-slate-400">Form 20 Backlog — Live Insights</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-slate-400" style="font-size:15px;">calendar_month</span>
-                    <select id="dash-month-filter" class="h-7 px-2 text-[11px] font-medium text-slate-600 border border-slate-200 bg-white rounded-lg focus:ring-0 outline-none cursor-pointer">
-                        <option value="">All Time</option>
-                    </select>
-                    <button id="dash-refresh-btn" class="h-7 w-7 flex items-center justify-center border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition-colors">
-                        <span class="material-symbols-outlined text-slate-400" style="font-size:14px;">refresh</span>
-                    </button>
-                </div>
+        <!-- Summary stat strip -->
+        <div class="grid grid-cols-4 gap-3">
+          <div class="card p-4">
+            <div class="flex items-start justify-between mb-2">
+              <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Total Pushed</p>
+              <span class="material-symbols-outlined text-emerald-500" style="font-size:15px;">database</span>
             </div>
-
-            <div class="p-5 flex flex-col gap-5">
-
-                <!-- KPI Row -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div class="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-outlined text-indigo-500" style="font-size:20px;">inventory_2</span>
-                        </div>
-                        <div>
-                            <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Total Records</p>
-                            <p class="text-2xl font-black text-slate-800" id="dash-total">—</p>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-outlined text-emerald-500" style="font-size:20px;">database</span>
-                        </div>
-                        <div>
-                            <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">DB Pushed</p>
-                            <p class="text-2xl font-black text-emerald-600" id="dash-db-pushed">—</p>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-outlined text-amber-500" style="font-size:20px;">download_done</span>
-                        </div>
-                        <div>
-                            <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Downloaded</p>
-                            <p class="text-2xl font-black text-amber-600" id="dash-downloaded">—</p>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-outlined text-red-400" style="font-size:20px;">error_outline</span>
-                        </div>
-                        <div>
-                            <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Missing</p>
-                            <p class="text-2xl font-black text-red-500" id="dash-missing">—</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Progress Banner -->
-                <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] relative overflow-hidden flex flex-col justify-between">
-                    <div class="flex items-start justify-between mb-6">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
-                                <span class="material-symbols-outlined text-emerald-500" style="font-size:20px;">task_alt</span>
-                            </div>
-                            <div>
-                                <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Overall Progress</p>
-                                <p class="text-[12px] text-slate-500 font-medium mt-0.5" id="dash-progress-sub">0 / 0 records completed</p>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-3xl font-black text-slate-800 tracking-tight" id="dash-progress-pct">0%</p>
-                        </div>
-                    </div>
-                    
-                    <!-- Sleek Progress Bar -->
-                    <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                        <div id="dash-prog-bar" class="bg-gradient-to-r from-emerald-400 to-teal-500 h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(52,211,153,0.4)]" style="width:0%"></div>
-                    </div>
-                </div>
-
-                <!-- Charts Row 1: Donut + State Bar -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                    <!-- Donut: Status Distribution -->
-                    <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Status Distribution</p>
-                        <div class="flex items-center justify-center h-56">
-                            <canvas id="statusPieChart"></canvas>
-                        </div>
-                    </div>
-
-                    <!-- Bar: Monthly DB Pushed Trend -->
-                    <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Monthly DB Push Trend</p>
-                        <div class="h-56 relative">
-                            <canvas id="monthlyBarChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Weekly Velocity Chart -->
-                <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Weekly DB Push Velocity</p>
-                            <p class="text-[11px] text-slate-400 mt-0.5" id="weekly-chart-subtitle">Select a month above to filter</p>
-                        </div>
-                        <div class="flex items-center gap-2 text-[11px] text-slate-400">
-                            <span class="w-3 h-3 rounded-sm bg-indigo-400 inline-block"></span> DB Pushed per week
-                        </div>
-                    </div>
-                    <div class="h-48 relative">
-                        <canvas id="weeklyBarChart"></canvas>
-                    </div>
-                </div>
-
-
-            </div><!-- /p-5 -->
-        </div><!-- end dashboard-view -->
-
-        <!-- ===== GLANCE REPORT VIEW ===== -->
-        <div id="glance-view" class="hidden flex-1 flex-col relative h-full overflow-y-auto custom-scrollbar bg-slate-50/50">
-            <!-- Header -->
-            <div class="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-outlined text-indigo-600 text-[20px]">fact_check</span>
-                    </div>
-                    <div>
-                        <h2 class="text-[18px] font-black tracking-tight text-slate-800">Glance Report</h2>
-                        <p class="text-[12px] font-medium text-slate-500">Weekly DB Pushed records overview</p>
-                    </div>
-                </div>
+            <p class="text-[24px] font-bold text-gray-900 leading-none tabular-nums" id="glance-stat-total">—</p>
+            <p class="text-[11px] text-gray-400 mt-1.5" id="glance-stat-total-sub">records in database</p>
+          </div>
+          <div class="card p-4">
+            <div class="flex items-start justify-between mb-2">
+              <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">This Week</p>
+              <span class="material-symbols-outlined text-indigo-500" style="font-size:15px;">calendar_today</span>
             </div>
-
-            <!-- Content Area -->
-            <div class="p-6">
-                <!-- Filters Bar -->
-                <div class="mb-4 flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex-wrap">
-                    <span class="material-symbols-outlined text-slate-400" style="font-size:18px;">filter_alt</span>
-                    
-                    <div class="flex items-center gap-2">
-                        <label class="text-[11px] font-bold text-slate-500 uppercase">Month</label>
-                        <select id="glance-month-filter" class="h-8 w-36 px-2 text-[12px] font-bold text-slate-700 border border-slate-200 bg-slate-50 rounded outline-none cursor-pointer hover:border-slate-300">
-                            <option value="">All Months</option>
-                        </select>
-                    </div>
-                    
-                    <div class="flex items-center gap-2">
-                        <label class="text-[11px] font-bold text-slate-500 uppercase">State</label>
-                        <select id="glance-state-filter" class="h-8 w-32 px-2 text-[12px] font-bold text-slate-700 border border-slate-200 bg-slate-50 rounded outline-none cursor-pointer hover:border-slate-300">
-                            <option value="">All States</option>
-                        </select>
-                    </div>
-                    
-                    <div class="flex items-center gap-2">
-                        <label class="text-[11px] font-bold text-slate-500 uppercase">Type</label>
-                        <select id="glance-type-filter" class="h-8 w-28 px-2 text-[12px] font-bold text-slate-700 border border-slate-200 bg-slate-50 rounded outline-none cursor-pointer hover:border-slate-300">
-                            <option value="">All Types</option>
-                        </select>
-                    </div>
-
-                    <div class="ml-auto">
-                        <span class="text-[12px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full" id="glance-panel-count">— records</span>
-                    </div>
-                </div>
-
-                <!-- Weeks accordion -->
-                <div id="glance-panel-accordion" class="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm divide-y divide-slate-100">
-                    <div class="p-10 text-center flex flex-col items-center gap-3 text-slate-400">
-                        <span class="material-symbols-outlined" style="font-size:36px;">hourglass_empty</span>
-                        <p class="text-sm">Loading...</p>
-                    </div>
-                </div>
-            </div>
-        </div><!-- end glance-view -->
-
-    </main>
-</div>
-
-
-</div>
-
-
-
-<!-- Modal Overlay -->
-<div id="overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
-    <div class="bg-white rounded-xl shadow-2xl w-[480px] max-w-[90vw] overflow-hidden scale-95 transition-transform duration-300 flex flex-col" id="modal-card">
-        
-        <!-- Header -->
-        <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-start bg-slate-50 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-            <div class="relative z-10 flex items-start gap-4">
-                <div class="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
-                    <span class="material-symbols-outlined text-[20px] text-indigo-600">edit_document</span>
-                </div>
-                <div>
-                    <h3 class="text-[15px] font-bold text-slate-900 tracking-tight" id="modal-title">Edit Record</h3>
-                    <p class="text-[11.5px] font-medium text-slate-500 mt-0.5 flex items-center gap-1.5" id="modal-key">
-                        <span class="material-symbols-outlined text-[12px]">key</span> KEY
-                    </p>
-                </div>
-            </div>
-            <button id="modal-close" class="relative z-10 text-slate-400 hover:text-slate-700 hover:bg-white rounded-full p-1.5 transition-colors shadow-sm border border-transparent hover:border-slate-200">
-                <span class="material-symbols-outlined text-[18px]">close</span>
-            </button>
-        </div>
-        
-        <!-- Body -->
-        <div class="p-6 flex flex-col gap-6">
-            <!-- Status Field -->
-            <div class="space-y-1.5">
-                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                    <span class="material-symbols-outlined text-[14px]">moving</span> Status
-                </label>
-                <select id="edit-status" class="w-full h-9 text-[13px] font-medium text-slate-700 border-slate-200 bg-slate-50 rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 px-3 outline-none border transition-all cursor-pointer shadow-sm">
-                    <option value="missing">Missing</option>
-                    <option value="downloaded">Downloaded</option>
-                    <option value="extracted">Extracted</option>
-                    <option value="db_pushed">DB Pushed</option>
-                </select>
-            </div>
-            
-            <!-- Remark Field -->
-            <div class="space-y-1.5">
-                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                    <span class="material-symbols-outlined text-[14px]">notes</span> Remark
-                </label>
-                <input id="edit-remark" type="text" class="w-full h-9 text-[13px] font-medium text-slate-700 border-slate-200 bg-slate-50 rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 px-3 outline-none border transition-all shadow-sm" placeholder="Add an operational note..." autocomplete="off">
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
-            <button id="modal-cancel" class="px-4 py-2 text-[12.5px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors">
-                Cancel
-            </button>
-            <button id="modal-save" class="px-5 py-2 text-[12.5px] font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-all shadow-sm shadow-slate-900/20 flex items-center gap-2">
-                <span class="material-symbols-outlined text-[16px]">save</span>
-                Save Changes
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Retro Export Modal -->
-<div id="retro-overlay" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200">
-    <div class="bg-white rounded-xl shadow-2xl w-[520px] max-w-full overflow-hidden scale-95 transition-transform duration-200 border border-slate-200/60" id="retro-card">
-
-        <!-- Header -->
-        <div class="px-7 py-5 bg-gradient-to-b from-slate-50 to-white border-b border-slate-200 flex justify-between items-start">
-            <div class="flex items-center gap-4">
-                <div class="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center shadow-sm shrink-0">
-                    <span class="material-symbols-outlined text-slate-700 text-[20px]">database</span>
-                </div>
-                <div>
-                    <h3 class="text-[16px] font-bold text-slate-900 font-headline tracking-tight">Export Retro Data</h3>
-                    <p class="text-[12px] text-slate-500 font-medium mt-0.5">Query and extract subsets from the historical vault</p>
-                </div>
-            </div>
-            <button id="retro-close" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg p-1.5 transition-colors shrink-0">
-                <span class="material-symbols-outlined text-[20px]">close</span>
-            </button>
-        </div>
-
-        <!-- Filter Steps -->
-        <div class="px-7 pt-6 pb-2">
-            <div class="flex flex-col gap-6 relative">
-                <!-- Vertical connection line -->
-                <div class="absolute left-[13px] top-6 bottom-6 w-[2px] bg-slate-100 z-0"></div>
-
-                <!-- Step 1: State -->
-                <div class="relative z-10 flex gap-4">
-                    <div class="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-[11px] font-black shadow-md border-[3px] border-white shrink-0 mt-1">1</div>
-                    <div class="flex-1">
-                        <label for="retro-state" class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">Target State</label>
-                        <select id="retro-state" class="w-full h-10 text-[13px] border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900 px-3 outline-none bg-white text-slate-800 shadow-sm transition-all hover:border-slate-400 font-medium cursor-pointer">
-                            <option value="">All States</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Step 2: Election Type -->
-                <div class="relative z-10 flex gap-4">
-                    <div class="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-[11px] font-black shadow-md border-[3px] border-white shrink-0 mt-1">2</div>
-                    <div class="flex-1">
-                        <label for="retro-type" class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">Election Type</label>
-                        <select id="retro-type" disabled class="w-full h-10 text-[13px] border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900 px-3 outline-none bg-white text-slate-800 shadow-sm transition-all hover:border-slate-400 font-medium cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:shadow-none disabled:cursor-not-allowed">
-                            <option value="">All Types</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Step 3: Election Year -->
-                <div class="relative z-10 flex gap-4">
-                    <div class="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-[11px] font-black shadow-md border-[3px] border-white shrink-0 mt-1">3</div>
-                    <div class="flex-1">
-                        <label for="retro-year" class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">Election Year</label>
-                        <select id="retro-year" disabled class="w-full h-10 text-[13px] border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900 px-3 outline-none bg-white text-slate-800 shadow-sm transition-all hover:border-slate-400 font-medium cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:shadow-none disabled:cursor-not-allowed">
-                            <option value="">All Years</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Count Preview Band -->
-        <div class="px-7 pt-4 pb-5">
-            <div class="flex items-center gap-3 px-4 py-3 rounded-lg border border-indigo-200/70 bg-indigo-50/50">
-                <span class="material-symbols-outlined text-indigo-500 shrink-0 bg-white rounded-full shadow-sm p-1" style="font-size: 16px;">query_stats</span>
-                <span class="text-[13px] font-semibold text-indigo-900 tracking-tight" id="retro-count-preview">—</span>
-            </div>
-        </div>
-
-        <!-- Footer: Format + Actions -->
-        <div class="px-7 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
-            <!-- Format selector -->
-            <div class="flex items-center gap-3 shrink-0">
-                <div class="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm">
-                    <span class="material-symbols-outlined text-[18px] text-slate-500">settings</span>
-                </div>
-                <div>
-                    <label for="retro-format" class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Format</label>
-                    <select id="retro-format" class="text-[13px] font-semibold text-slate-800 border-0 bg-transparent focus:ring-0 cursor-pointer p-0 pr-4 leading-none hover:text-slate-600 transition-colors">
-                        <option value="csv">CSV (.csv)</option>
-                        <option value="xlsx">Excel (.xlsx)</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Action buttons -->
-            <div class="flex items-center gap-3">
-                <button id="retro-cancel" class="px-5 py-2 text-[13px] font-semibold text-slate-600 hover:text-slate-900 transition-colors">Cancel</button>
-                <button id="retro-download" disabled class="px-6 py-2.5 text-[13px] font-bold rounded-lg transition-all duration-200 shadow-sm flex items-center gap-2 bg-slate-200 text-slate-400 cursor-not-allowed" aria-disabled="true">
-                    <span class="material-symbols-outlined text-[16px]">download</span> Download
-                </button>
-            </div>
-        </div>
-
-    </div>
-</div>
-
-<!-- Toast -->
-<div id="toast" class="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2.5 rounded shadow-lg text-[12.5px] font-medium transition-all duration-300 opacity-0 pointer-events-none translate-y-4 z-[200]">
-</div>
-
-<!-- Custom Confirmation Modal -->
-<div id="confirm-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
-    <div class="bg-white rounded-xl shadow-2xl w-[400px] max-w-[90vw] overflow-hidden scale-95 transition-transform duration-300 flex flex-col" id="confirm-card">
-        
-        <div class="p-6 flex flex-col items-center text-center">
-            <div class="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-4 border border-red-100 shadow-sm">
-                <span class="material-symbols-outlined text-[28px] text-red-600">warning</span>
-            </div>
-            <h3 class="text-[17px] font-bold text-slate-900 tracking-tight mb-2">Remove from Backlog?</h3>
-            <p class="text-[13px] text-slate-500 font-medium leading-relaxed px-2">
-                Marking this record as <span class="font-bold text-slate-700">DB Pushed</span> will permanently remove it from the backlog view. Are you sure you want to proceed?
+            <p class="text-[24px] font-bold text-indigo-600 leading-none tabular-nums" id="glance-stat-thisweek">—</p>
+            <p class="text-[11px] mt-1.5 flex items-center gap-1" id="glance-stat-trend">
+              <span class="text-gray-400">vs last week</span>
             </p>
+          </div>
+          <div class="card p-4">
+            <div class="flex items-start justify-between mb-2">
+              <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Weekly Avg</p>
+              <span class="material-symbols-outlined text-amber-500" style="font-size:15px;">trending_up</span>
+            </div>
+            <p class="text-[24px] font-bold text-gray-900 leading-none tabular-nums" id="glance-stat-avg">—</p>
+            <p class="text-[11px] text-gray-400 mt-1.5" id="glance-stat-weeks">over — active weeks</p>
+          </div>
+          <div class="card p-4">
+            <div class="flex items-start justify-between mb-2">
+              <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">States Covered</p>
+              <span class="material-symbols-outlined text-blue-500" style="font-size:15px;">public</span>
+            </div>
+            <p class="text-[24px] font-bold text-gray-900 leading-none tabular-nums" id="glance-stat-states">—</p>
+            <p class="text-[11px] text-gray-400 mt-1.5" id="glance-stat-topstate">top: —</p>
+          </div>
         </div>
 
-        <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex gap-3 w-full">
-            <button id="confirm-cancel" class="flex-1 py-2 text-[13px] font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors">
-                Cancel
-            </button>
-            <button id="confirm-proceed" class="flex-1 py-2 text-[13px] font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors shadow-sm">
-                Yes, Push to DB
-            </button>
+        <!-- Charts row -->
+        <div class="grid grid-cols-5 gap-4">
+          <!-- Weekly trend -->
+          <div class="col-span-3 card p-4">
+            <div class="flex items-center justify-between mb-4">
+              <p class="text-[12.5px] font-semibold text-gray-900">Weekly Push Trend</p>
+              <span class="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">records / week</span>
+            </div>
+            <div class="relative" style="height:200px">
+              <canvas id="glanceWeeklyChart"></canvas>
+            </div>
+          </div>
+          <!-- State performance -->
+          <div class="col-span-2 card p-4">
+            <div class="flex items-center justify-between mb-4">
+              <p class="text-[12.5px] font-semibold text-gray-900">State Performance</p>
+              <span class="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">by records</span>
+            </div>
+            <div class="relative" style="height:200px">
+              <canvas id="glanceStateChart"></canvas>
+            </div>
+          </div>
         </div>
-    </div>
+
+        <!-- Election type heatmap-style row -->
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-[12.5px] font-semibold text-gray-900">Election Type Distribution</p>
+            <span class="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">share of pushed records</span>
+          </div>
+          <div id="glance-type-bars" class="flex flex-col gap-2.5"></div>
+        </div>
+
+        <!-- Week-by-week detail accordion -->
+        <div>
+          <div class="flex items-center justify-between mb-2.5 px-1">
+            <p class="text-[12.5px] font-semibold text-gray-900">Weekly Breakdown</p>
+            <p class="text-[11px] text-gray-400">Expand a week to view its records</p>
+          </div>
+          <div id="glance-panel-accordion" class="bg-white rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-100 shadow-sm">
+            <div class="p-10 text-center flex flex-col items-center gap-3 text-gray-400">
+              <span class="material-symbols-outlined animate-spin" style="font-size:28px;">refresh</span>
+              <p class="text-[12px]">Loading…</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div><!-- /glance-view -->
+
+  </main>
 </div>
 
-<script src="/static/app.js"></script>
+
+<!-- ═══════════════════════════════════
+     EDIT RECORD MODAL
+═══════════════════════════════════ -->
+<div id="overlay" class="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[100] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200">
+  <div class="bg-white rounded-2xl shadow-2xl w-[440px] max-w-[92vw] overflow-hidden scale-95 transition-transform duration-200 border border-gray-200 flex flex-col" id="modal-card">
+
+    <!-- Header -->
+    <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between">
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+          <span class="material-symbols-outlined text-gray-600" style="font-size:17px;">edit_document</span>
+        </div>
+        <div>
+          <h3 class="text-[14px] font-semibold text-gray-900" id="modal-title">Edit Record</h3>
+          <p class="text-[11px] text-gray-400 mt-0.5 font-mono tracking-tight" id="modal-key">KEY</p>
+        </div>
+      </div>
+      <button id="modal-close" class="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="p-5 flex flex-col gap-4">
+      <div>
+        <label class="block text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Status</label>
+        <select id="edit-status" class="w-full h-9 text-[13px] font-medium text-gray-800 border border-gray-200 bg-gray-50 rounded-lg focus:bg-white focus:border-gray-400 px-3 outline-none transition-all cursor-pointer">
+          <option value="missing">Missing</option>
+          <option value="downloaded">Downloaded</option>
+          <option value="extracted">Extracted</option>
+          <option value="db_pushed">DB Pushed</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Remark</label>
+        <input id="edit-remark" type="text" autocomplete="off" placeholder="Add an operational note…"
+          class="w-full h-9 text-[13px] text-gray-800 border border-gray-200 bg-gray-50 rounded-lg focus:bg-white focus:border-gray-400 px-3 outline-none transition-all"/>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-2">
+      <button id="modal-cancel" class="px-4 py-2 text-[12.5px] font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+      <button id="modal-save" class="px-4 py-2 text-[12.5px] font-semibold text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-gray-400" style="font-size:14px;">save</span>
+        Save Changes
+      </button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════
+     RETRO EXPORT MODAL
+═══════════════════════════════════ -->
+<div id="retro-overlay" class="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[100] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200">
+  <div class="bg-white rounded-2xl shadow-2xl w-[480px] max-w-[92vw] overflow-hidden scale-95 transition-transform duration-200 border border-gray-200 flex flex-col" id="retro-card">
+
+    <!-- Header -->
+    <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between">
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+          <span class="material-symbols-outlined text-gray-600" style="font-size:17px;">database</span>
+        </div>
+        <div>
+          <h3 class="text-[14px] font-semibold text-gray-900">Export Retro Data</h3>
+          <p class="text-[11.5px] text-gray-400 mt-0.5">Query and extract from the historical vault</p>
+        </div>
+      </div>
+      <button id="retro-close" class="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+      </button>
+    </div>
+
+    <!-- Steps -->
+    <div class="p-5 flex flex-col gap-4">
+
+      <div class="flex gap-3 items-start">
+        <div class="w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">1</div>
+        <div class="flex-1">
+          <label class="block text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Target State</label>
+          <select id="retro-state" class="w-full h-9 text-[13px] border border-gray-200 rounded-lg px-3 outline-none bg-white text-gray-800 hover:border-gray-300 focus:border-gray-400 cursor-pointer transition-all">
+            <option value="">All States</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex gap-3 items-start">
+        <div class="w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">2</div>
+        <div class="flex-1">
+          <label class="block text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Election Type</label>
+          <select id="retro-type" disabled class="w-full h-9 text-[13px] border border-gray-200 rounded-lg px-3 outline-none bg-white text-gray-800 hover:border-gray-300 focus:border-gray-400 cursor-pointer transition-all disabled:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed">
+            <option value="">All Types</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex gap-3 items-start">
+        <div class="w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">3</div>
+        <div class="flex-1">
+          <label class="block text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Election Year</label>
+          <select id="retro-year" disabled class="w-full h-9 text-[13px] border border-gray-200 rounded-lg px-3 outline-none bg-white text-gray-800 hover:border-gray-300 focus:border-gray-400 cursor-pointer transition-all disabled:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed">
+            <option value="">All Years</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Count preview -->
+      <div class="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50">
+        <span class="material-symbols-outlined text-gray-400" style="font-size:14px;">query_stats</span>
+        <span class="text-[12.5px] font-medium text-gray-700" id="retro-count-preview">Select all three filters to preview count</span>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Format</span>
+        <select id="retro-format" class="text-[12.5px] font-semibold text-gray-800 bg-transparent border-0 focus:ring-0 outline-none cursor-pointer p-0 pr-3">
+          <option value="csv">CSV (.csv)</option>
+          <option value="xlsx">Excel (.xlsx)</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="retro-cancel" class="px-4 py-2 text-[12.5px] font-medium text-gray-500 hover:text-gray-800 transition-colors">Cancel</button>
+        <button id="retro-download" disabled aria-disabled="true"
+          class="px-4 py-2 text-[12.5px] font-semibold rounded-lg transition-all flex items-center gap-1.5 bg-gray-200 text-gray-400 cursor-not-allowed">
+          <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+          Download
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════
+     CONFIRM MODAL
+═══════════════════════════════════ -->
+<div id="confirm-overlay" class="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[110] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200">
+  <div class="bg-white rounded-2xl shadow-2xl w-[380px] max-w-[92vw] overflow-hidden scale-95 transition-transform duration-200 border border-gray-200 flex flex-col" id="confirm-card">
+    <div class="p-6 flex flex-col items-center text-center">
+      <div class="w-12 h-12 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+        <span class="material-symbols-outlined text-red-500" style="font-size:22px;">warning</span>
+      </div>
+      <h3 class="text-[15px] font-bold text-gray-900 mb-1.5">Remove from Backlog?</h3>
+      <p class="text-[12.5px] text-gray-500 leading-relaxed max-w-[280px]">
+        Marking as <span class="font-semibold text-gray-800">DB Pushed</span> will permanently remove this record from the backlog view.
+      </p>
+    </div>
+    <div class="px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex gap-2">
+      <button id="confirm-cancel" class="flex-1 py-2 text-[12.5px] font-medium text-gray-600 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-lg transition-colors">Cancel</button>
+      <button id="confirm-proceed" class="flex-1 py-2 text-[12.5px] font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors">Yes, Push to DB</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════
+     TOAST
+═══════════════════════════════════ -->
+<div id="toast" class="fixed bottom-5 right-5 bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-lg text-[12.5px] font-medium transition-all duration-300 opacity-0 pointer-events-none translate-y-2 z-[200] flex items-center gap-2 max-w-xs">
+</div>
+
+<script src="/static/app.js?v=20260605b"></script>
 </body>
 </html>

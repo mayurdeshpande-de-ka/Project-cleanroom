@@ -344,6 +344,7 @@ def get_stats():
     sir_by_status = {'downloaded': 0, 'extracted': 0, 'missing': 0, 'pending': 0, 'completed': 0, 'db_pushed': 0}
     wip_count = 0
     state_dict = {}
+    type_dict = {}
 
     for r in all_records:
         r_dict = dict(r)
@@ -357,10 +358,21 @@ def get_stats():
                 'state_name': r_dict['state_name'],
                 'total': 0,
                 'completed': 0,
-                'extracted': 0
+                'extracted': 0,
+                'missing': 0
             }
             
         state_dict[state]['total'] += 1
+        
+        el_type_base = r_dict['el_type'].split('-')[0] if r_dict['el_type'] else 'Unknown'
+        if el_type_base not in type_dict:
+            type_dict[el_type_base] = {
+                'total': 0,
+                'completed': 0,
+                'missing': 0,
+                'downloaded': 0
+            }
+        type_dict[el_type_base]['total'] += 1
         
         effective_status = r_dict['overall_status']
         
@@ -373,11 +385,20 @@ def get_stats():
             
         if effective_status in ('completed', 'db_pushed'):
             state_dict[state]['completed'] += 1
+            type_dict[el_type_base]['completed'] += 1
         if effective_status == 'extracted':
             state_dict[state]['extracted'] += 1
+        if effective_status == 'missing':
+            state_dict[state]['missing'] += 1
+            type_dict[el_type_base]['missing'] += 1
+        if effective_status == 'downloaded':
+            type_dict[el_type_base]['downloaded'] += 1
 
     total = sum(by_status.values())
     state_rows = [state_dict[s] for s in sorted(state_dict.keys())]
+    
+    # Calculate bottlenecks (top 5 states with most missing records)
+    bottlenecks = sorted(state_rows, key=lambda x: x['missing'], reverse=True)[:5]
 
     if history.pop('_updated', False):
         save_completion_history(history)
@@ -388,6 +409,8 @@ def get_stats():
         'sir_by_status': sir_by_status,
         'wip_count': wip_count,
         'by_state': state_rows,
+        'by_type': type_dict,
+        'bottlenecks': bottlenecks
     })
 
 
@@ -397,6 +420,21 @@ def glance_report():
     history.pop('_updated', None)
 
     filter_month = request.args.get('month', '').strip()
+    filter_state = request.args.get('state', '').strip()
+    filter_el_type = request.args.get('el_type', '').strip()
+    hide_bp = request.args.get('hide_bp', '') == '1'
+    sir_only = request.args.get('sir_only', '') == '1'
+
+    # SIR state set (only loaded when filtering by SIR)
+    sir_states = set()
+    if sir_only:
+        try:
+            conn = get_db()
+            sir_rows = conn.execute("SELECT DISTINCT state FROM records WHERE is_sir_state = 1").fetchall()
+            conn.close()
+            sir_states = {str(dict(r)['state']).strip() for r in sir_rows}
+        except Exception:
+            sir_states = set()
 
     weekly_counts  = {}
     records_by_week  = {}
@@ -412,6 +450,19 @@ def glance_report():
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
         except Exception:
+            continue
+            
+        parts = key.split('-')
+        k_state = parts[0] if len(parts) > 0 else ''
+        k_el_type = parts[1] if len(parts) > 1 else ''
+
+        if filter_state and k_state != filter_state:
+            continue
+        if filter_el_type and k_el_type != filter_el_type:
+            continue
+        if hide_bp and '-BP' in key:
+            continue
+        if sir_only and k_state not in sir_states:
             continue
 
         # Weekly bucket
@@ -463,6 +514,206 @@ def glance_report():
         'available_months': sorted_months,
     })
 
+
+
+_pdf_lock = threading.Lock()
+
+
+@app.route('/api/glance_report/pdf')
+def glance_report_pdf():
+    """Analytics-driven Weekly Glance Report PDF (this week in focus)."""
+    import io
+    from collections import Counter
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import FancyBboxPatch
+
+    state_f = request.args.get('state', '').strip()
+    type_f  = request.args.get('el_type', '').strip()
+
+    history = get_completion_history()
+    history.pop('_updated', None)
+
+    recs = []
+    for key, date_str in history.items():
+        try:
+            d = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except Exception:
+            continue
+        parts = key.split('-')
+        st = parts[0] if parts else ''
+        ty = parts[1] if len(parts) > 1 else ''
+        if state_f and st != state_f:
+            continue
+        if type_f and ty != type_f:
+            continue
+        recs.append({'key': key, 'date': date_str, 'd': d, 'state': st, 'type': ty})
+
+    today = datetime.now().date()
+    cur_start = today - timedelta(days=today.weekday())
+    cur_end   = cur_start + timedelta(days=6)
+    last_start = cur_start - timedelta(days=7)
+    last_end   = last_start + timedelta(days=6)
+
+    def wstart(d):
+        return d - timedelta(days=d.weekday())
+
+    weekly = {}
+    for r in recs:
+        ws = wstart(r['d'])
+        weekly[ws] = weekly.get(ws, 0) + 1
+    weeks_sorted = sorted(weekly.keys())
+
+    this_week_recs = [r for r in recs if cur_start <= r['d'] <= cur_end]
+    this_week = len(this_week_recs)
+    last_week = sum(1 for r in recs if last_start <= r['d'] <= last_end)
+    total = len(recs)
+    avg = (total / len(weeks_sorted)) if weeks_sorted else 0
+
+    if this_week_recs:
+        focus = this_week_recs; f_start, f_end = cur_start, cur_end; f_label = 'This Week'
+    elif weeks_sorted:
+        fs = weeks_sorted[-1]; f_start, f_end = fs, fs + timedelta(days=6)
+        focus = [r for r in recs if f_start <= r['d'] <= f_end]; f_label = 'Latest Active Week'
+    else:
+        focus = []; f_start, f_end = cur_start, cur_end; f_label = 'This Week'
+
+    state_counts = Counter(r['state'] for r in recs)
+    type_counts  = Counter(r['type'] for r in recs)
+
+    INDIGO, EMERALD, AMBER, BLUE, RED = '#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#ef4444'
+    DARK, GRAY, LIGHT = '#111827', '#6b7280', '#9ca3af'
+
+    with _pdf_lock:
+        fig = plt.figure(figsize=(8.27, 11.69))
+        fig.patch.set_facecolor('white')
+
+        # Header
+        fig.text(0.07, 0.965, 'Form 20 — Weekly Glance Report', fontsize=20, fontweight='bold', color=DARK)
+        fig.text(0.07, 0.945, 'DB-Pushed Records · Analytical Summary', fontsize=10.5, color=GRAY)
+        fig.text(0.93, 0.966, 'Generated ' + datetime.now().strftime('%d %b %Y, %H:%M'),
+                 fontsize=8.5, color=LIGHT, ha='right')
+        wk = f"{f_label}:  {f_start.strftime('%d %b')} - {f_end.strftime('%d %b %Y')}"
+        filt = []
+        if state_f: filt.append('State=' + state_f)
+        if type_f:  filt.append('Type=' + type_f)
+        fig.text(0.93, 0.946, wk + ('   |   ' + ', '.join(filt) if filt else ''),
+                 fontsize=8.5, color=GRAY, ha='right')
+        fig.add_artist(plt.Line2D([0.07, 0.93], [0.93, 0.93], color='#e5e7eb', lw=1))
+
+        # KPI cards
+        kpis = [
+            ('THIS WEEK',    str(this_week), INDIGO),
+            ('VS LAST WEEK', ('+' if this_week - last_week >= 0 else '') + str(this_week - last_week),
+                             EMERALD if this_week >= last_week else RED),
+            ('WEEKLY AVG',   f'{avg:.1f}', AMBER),
+            ('CUMULATIVE',   str(total), DARK),
+            ('STATES',       str(len(state_counts)), BLUE),
+        ]
+        n = len(kpis); x0, x1, gapw = 0.07, 0.93, 0.012
+        cw = ((x1 - x0) - (n - 1) * gapw) / n
+        for i, (lab, val, col) in enumerate(kpis):
+            cx = x0 + i * (cw + gapw)
+            ax = fig.add_axes([cx, 0.855, cw, 0.052]); ax.axis('off')
+            ax.add_patch(FancyBboxPatch((0.02, 0.04), 0.96, 0.92,
+                         boxstyle="round,pad=0,rounding_size=0.12", transform=ax.transAxes,
+                         facecolor='#f9fafb', edgecolor='#e5e7eb', lw=0.8))
+            ax.text(0.5, 0.70, lab, ha='center', va='center', fontsize=6.8, color=GRAY, fontweight='bold')
+            ax.text(0.5, 0.33, val, ha='center', va='center', fontsize=15, color=col, fontweight='bold')
+
+        gs = fig.add_gridspec(3, 2, left=0.07, right=0.93, top=0.78, bottom=0.065,
+                              hspace=0.5, wspace=0.22, height_ratios=[1, 1, 1.3])
+
+        def style(ax, title):
+            ax.set_title(title, fontsize=10.5, fontweight='bold', color=DARK, loc='left', pad=8)
+            for sp in ['top', 'right']:
+                ax.spines[sp].set_visible(False)
+            ax.spines['left'].set_color('#e5e7eb'); ax.spines['bottom'].set_color('#e5e7eb')
+            ax.tick_params(colors=GRAY, labelsize=8)
+
+        # Weekly trend
+        axw = fig.add_subplot(gs[0, 0]); style(axw, 'Weekly Push Trend')
+        if weeks_sorted:
+            vals = [weekly[w] for w in weeks_sorted]
+            axw.bar(range(len(vals)), vals, color=INDIGO, width=0.6)
+            axw.set_xticks(range(len(vals)))
+            axw.set_xticklabels([w.strftime('%d %b') for w in weeks_sorted], fontsize=7)
+            for i, v in enumerate(vals):
+                axw.text(i, v, str(v), ha='center', va='bottom', fontsize=7, color=DARK)
+            axw.set_ylim(0, max(vals) * 1.25)
+        else:
+            axw.axis('off'); axw.text(0.5, 0.5, 'No data', ha='center', color=LIGHT)
+
+        # State performance
+        axs = fig.add_subplot(gs[0, 1]); style(axs, 'State Performance (cumulative)')
+        top_states = state_counts.most_common(8)[::-1]
+        if top_states:
+            axs.barh([s for s, _ in top_states], [c for _, c in top_states], color=EMERALD, height=0.6)
+            for i, (s, c) in enumerate(top_states):
+                axs.text(c, i, ' ' + str(c), va='center', fontsize=7, color=DARK)
+        else:
+            axs.axis('off'); axs.text(0.5, 0.5, 'No data', ha='center', color=LIGHT)
+
+        # Type distribution
+        axt = fig.add_subplot(gs[1, 0]); style(axt, 'Election Type Distribution')
+        top_types = type_counts.most_common()[::-1]
+        if top_types:
+            axt.barh([t for t, _ in top_types], [c for _, c in top_types], color=INDIGO, height=0.55)
+            for i, (t, c) in enumerate(top_types):
+                pct = (c / total * 100) if total else 0
+                axt.text(c, i, f' {c} ({pct:.0f}%)', va='center', fontsize=7, color=DARK)
+        else:
+            axt.axis('off'); axt.text(0.5, 0.5, 'No data', ha='center', color=LIGHT)
+
+        # Focus week by state
+        axf = fig.add_subplot(gs[1, 1]); style(axf, f'{f_label} · by State')
+        fc = Counter(r['state'] for r in focus)
+        if fc:
+            items = fc.most_common()[::-1]
+            axf.barh([s for s, _ in items], [c for _, c in items], color=AMBER, height=0.6)
+            for i, (s, c) in enumerate(items):
+                axf.text(c, i, ' ' + str(c), va='center', fontsize=7, color=DARK)
+        else:
+            axf.axis('off')
+            axf.text(0.5, 0.5, 'No records pushed\nin focus week', ha='center', va='center', fontsize=9, color=LIGHT)
+
+        # Records table
+        axtab = fig.add_subplot(gs[2, :]); axtab.axis('off')
+        axtab.set_title(f'{f_label} · Records ({len(focus)})', fontsize=10.5, fontweight='bold',
+                        color=DARK, loc='left', pad=6)
+        focus_sorted = sorted(focus, key=lambda r: r['date'], reverse=True)
+        cap = 24
+        cell = [[r['key'], r['state'], r['type'], r['date']] for r in focus_sorted[:cap]]
+        if cell:
+            tab = axtab.table(cellText=cell, colLabels=['Election Key', 'State', 'Type', 'Date Pushed'],
+                              cellLoc='left', loc='upper center', colWidths=[0.40, 0.16, 0.16, 0.28])
+            tab.auto_set_font_size(False); tab.set_fontsize(8); tab.scale(1, 1.4)
+            for (row, _ci), cellobj in tab.get_celld().items():
+                cellobj.set_edgecolor('#e5e7eb')
+                if row == 0:
+                    cellobj.set_facecolor('#111827'); cellobj.set_text_props(color='white', fontweight='bold')
+                else:
+                    cellobj.set_facecolor('#ffffff' if row % 2 else '#f9fafb')
+            if len(focus_sorted) > cap:
+                axtab.text(0.5, 0.0, f'… and {len(focus_sorted) - cap} more records',
+                           ha='center', fontsize=8, color=GRAY, transform=axtab.transAxes)
+        else:
+            axtab.text(0.5, 0.6, 'No records pushed in the focus week.', ha='center', fontsize=10, color=LIGHT)
+
+        fig.text(0.07, 0.03, 'Form 20 Backlog Tracker · Confidential', fontsize=7.5, color=LIGHT)
+
+        out_fmt = 'png' if request.args.get('fmt', '').lower() == 'png' else 'pdf'
+        buf = io.BytesIO()
+        fig.savefig(buf, format=out_fmt, facecolor='white', dpi=130 if out_fmt == 'png' else None)
+        plt.close(fig)
+
+    buf.seek(0)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    if out_fmt == 'png':
+        return send_file(buf, mimetype='image/png')
+    return send_file(buf, mimetype='application/pdf', as_attachment=True,
+                     download_name=f'Glance_Report_{f_start.strftime("%Y%m%d")}_{ts}.pdf')
 
 
 @app.route('/api/filters')
@@ -657,249 +908,219 @@ def export_records():
     return jsonify({'error': 'Unsupported format'}), 400
 
 
+# ── Retro Export (live from AWS RDS: election_result ⋈ election) ─────────────
+
+RETRO_META_JSON_PATH = os.path.join(BASE_DIR, 'retro_metadata.json')
+
+# Canonical column order — mirrors the historical "SELECT er.*, e.*" shape so the
+# exported file stays compatible with the previous RETRO.csv (el_id appears twice).
+RETRO_HEADERS = [
+    'el_res_id', 'ca_full_name', 'party_abb', 'party_id', 'el_vote_count',
+    'el_vote_perc', 'el_rank', 'el_id', 'ac_no', 'state_abb',
+    'original_ca_full_name', 'original_party_abb', 'caste', 'caste_category',
+    'gender', 'age', 'incumbency', 'el_id', 'el_year', 'el_type',
+]
+
+RETRO_SELECT = (
+    "SELECT er.el_res_id, er.ca_full_name, er.party_abb, er.party_id, er.el_vote_count, "
+    "er.el_vote_perc, er.el_rank, er.el_id, er.ac_no, er.state_abb, "
+    "er.original_ca_full_name, er.original_party_abb, er.caste, er.caste_category, "
+    "er.gender, er.age, er.incumbency, e.el_id, e.el_year, e.el_type "
+    "FROM election_result er JOIN election e ON er.el_id = e.el_id"
+)
+
 retro_metadata_cache = None
+
+
+def fetch_retro_metadata_sync():
+    """Build {state: {el_type: {year: count}}} live from RDS. Full scan — cached."""
+    conn = get_rds_db()
+    if not conn:
+        return None
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT er.state_abb, e.el_type, e.el_year, COUNT(*) "
+            "FROM election_result er JOIN election e ON er.el_id = e.el_id "
+            "GROUP BY er.state_abb, e.el_type, e.el_year"
+        )
+        meta = {}
+        for state, el_type, el_year, cnt in cur.fetchall():
+            if state is None or el_type is None or el_year is None:
+                continue
+            s, t, y = str(state).strip(), str(el_type).strip(), str(el_year).strip()
+            meta.setdefault(s, {}).setdefault(t, {})[y] = cnt
+        try:
+            with open(RETRO_META_JSON_PATH, 'w', encoding='utf-8') as f:
+                json.dump(meta, f)
+        except Exception:
+            pass
+        return meta
+    except Exception as e:
+        print(f"fetch_retro_metadata_sync error: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_retro_metadata_dict():
+    """Return cached retro metadata, falling back to disk, then a one-time live build."""
+    global retro_metadata_cache
+    if retro_metadata_cache is not None:
+        return retro_metadata_cache
+    if os.path.exists(RETRO_META_JSON_PATH):
+        try:
+            with open(RETRO_META_JSON_PATH, 'r', encoding='utf-8') as f:
+                retro_metadata_cache = json.load(f)
+                return retro_metadata_cache
+        except Exception:
+            pass
+    retro_metadata_cache = fetch_retro_metadata_sync() or {}
+    return retro_metadata_cache
+
+
+def refresh_retro_metadata_loop():
+    global retro_metadata_cache
+    while True:
+        meta = fetch_retro_metadata_sync()
+        if meta is not None:
+            retro_metadata_cache = meta
+        time.sleep(600)  # refresh every 10 minutes — retro data keeps updating
+
+
+retro_meta_thread = threading.Thread(target=refresh_retro_metadata_loop, daemon=True)
+retro_meta_thread.start()
+
 
 @app.route('/api/retro/metadata')
 def retro_metadata():
-    global retro_metadata_cache
-    if retro_metadata_cache is None:
-        import csv
-        try:
-            retro_path = os.path.join(BASE_DIR, 'RETRO.csv')
-            metadata = {}
-            with open(retro_path, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f)
-                try:
-                    headers = next(reader)
-                except StopIteration:
-                    return jsonify({'error': 'RETRO.csv is empty'}), 500
-                
-                try:
-                    state_idx = headers.index('state_abb')
-                    type_idx = headers.index('el_type')
-                    year_idx = headers.index('el_year')
-                except ValueError:
-                    return jsonify({'error': 'Invalid RETRO.csv format'}), 500
-
-                for row in reader:
-                    if len(row) > max(state_idx, type_idx, year_idx):
-                        s = row[state_idx].strip()
-                        t = row[type_idx].strip()
-                        y = row[year_idx].strip()
-                        if not s or not t or not y:
-                            continue
-                        
-                        if s not in metadata:
-                            metadata[s] = {}
-                        if t not in metadata[s]:
-                            metadata[s][t] = {}
-                        if y not in metadata[s][t]:
-                            metadata[s][t][y] = 0
-                        metadata[s][t][y] += 1
-                        
-            retro_metadata_cache = metadata
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-            
-    return jsonify(retro_metadata_cache)
+    return jsonify(get_retro_metadata_dict())
 
 
 @app.route('/api/retro/export')
 def export_retro():
-    import csv, io, openpyxl
-    state = request.args.get('state', '').strip()
+    import io, csv, openpyxl
+    state   = request.args.get('state', '').strip()
     el_type = request.args.get('el_type', '').strip()
-    year = request.args.get('year', '').strip()
-    fmt = request.args.get('format', 'csv').strip().lower()
+    year    = request.args.get('year', '').strip()
+    fmt     = request.args.get('format', 'csv').strip().lower()
 
     if not state or not el_type or not year:
         return jsonify({'error': 'Missing required filters: state, el_type, year'}), 400
-
     try:
-        retro_path = os.path.join(BASE_DIR, 'RETRO.csv')
-        if not os.path.exists(retro_path):
-            return jsonify({'error': 'RETRO.csv not found'}), 404
+        year_int = int(year)
+    except ValueError:
+        return jsonify({'error': 'Invalid year parameter'}), 400
 
-        filtered_rows = []
-        headers = []
-        with open(retro_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            try:
-                headers = next(reader)
-            except StopIteration:
-                return jsonify({'error': 'RETRO.csv is empty'}), 500
-                
-            try:
-                state_idx = headers.index('state_abb')
-                type_idx = headers.index('el_type')
-                year_idx = headers.index('el_year')
-            except ValueError:
-                return jsonify({'error': 'Invalid RETRO.csv format: missing columns'}), 500
-
-            for row in reader:
-                if len(row) > max(state_idx, type_idx, year_idx):
-                    if row[state_idx] == state and row[type_idx] == el_type and row[year_idx] == year:
-                        filtered_rows.append(row)
-
-        if not filtered_rows:
-            return jsonify({'error': 'No retro data found for this filter combination.'}), 404
-
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"Retro_{state}_{el_type}_{year}_{ts}"
-
-        if fmt == 'xlsx':
-            output = io.BytesIO()
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Retro Data"
-            
-            from openpyxl.styles import Font, PatternFill
-            header_font = Font(bold=True, color="FFFFFF")
-            header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
-            
-            ws.append(headers)
-            for cell in ws[1]:
-                cell.font = header_font
-                cell.fill = header_fill
-                
-            for row in filtered_rows:
-                ws.append(row)
-                
-            ws.freeze_panes = "A2"
-            for col in ws.columns:
-                max_length = 0
-                column = col[0].column_letter
-                for cell in col:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                ws.column_dimensions[column].width = min(max_length + 2, 50)
-                
-            wb.save(output)
-            output.seek(0)
-            return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=f"{filename}.xlsx")
-        else:
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(headers)
-            writer.writerows(filtered_rows)
-            return send_file(io.BytesIO(output.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name=f"{filename}.csv")
-
+    conn = get_rds_db()
+    if not conn:
+        return jsonify({'error': 'AWS RDS not configured — cannot export live retro data'}), 503
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            RETRO_SELECT + " WHERE er.state_abb = %s AND e.el_type = %s AND e.el_year = %s "
+            "ORDER BY er.ac_no, er.el_rank",
+            (state, el_type, year_int),
+        )
+        rows = cur.fetchall()
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'RDS query failed: {e}'}), 500
+    finally:
+        conn.close()
+
+    if not rows:
+        return jsonify({'error': 'No retro data found for this filter combination.'}), 404
+
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"Retro_{state}_{el_type}_{year}_{ts}"
+
+    if fmt == 'xlsx':
+        from openpyxl.styles import Font, PatternFill
+        output = io.BytesIO()
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Retro Data"
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        ws.append(RETRO_HEADERS)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+        for row in rows:
+            ws.append(list(row))
+        ws.freeze_panes = "A2"
+        wb.save(output)
+        output.seek(0)
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True, download_name=f"{filename}.xlsx",
+        )
+    else:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(RETRO_HEADERS)
+        writer.writerows(rows)
+        return send_file(
+            io.BytesIO(output.getvalue().encode('utf-8-sig')),
+            mimetype='text/csv', as_attachment=True, download_name=f"{filename}.csv",
+        )
 
 
 @app.route('/api/retro/filters')
 def get_retro_filters():
-    retro_path = os.path.join(BASE_DIR, 'RETRO.csv')
-    if not os.path.exists(retro_path):
-        return jsonify({'error': 'RETRO.csv not found'}), 404
+    meta = get_retro_metadata_dict()
+    state_param   = request.args.get('state', '').strip() or None
+    el_type_param = request.args.get('el_type', '').strip() or None
 
-    try:
-        state_param   = request.args.get('state', '').strip() or None
-        el_type_param = request.args.get('el_type', '').strip() or None
+    all_states, all_el_types, all_years = set(), set(), set()
+    for s, types in meta.items():
+        all_states.add(s)
+        for t, years in types.items():
+            if state_param is None or s == state_param:
+                all_el_types.add(t)
+            if (state_param is None or s == state_param) and (el_type_param is None or t == el_type_param):
+                all_years.update(years.keys())
 
-        with open(retro_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            try:
-                headers = next(reader)
-            except StopIteration:
-                return jsonify({'states': [], 'el_types': [], 'years': []}), 200
+    def year_key(y):
+        try:
+            return int(y)
+        except ValueError:
+            return 0
 
-            try:
-                state_idx   = headers.index('state_abb')
-                el_type_idx = headers.index('el_type')
-                el_year_idx = headers.index('el_year')
-            except ValueError:
-                return jsonify({'error': 'Invalid RETRO.csv format: missing columns'}), 500
-
-            all_states   = set()
-            all_el_types = set()
-            all_years    = set()
-
-            for row in reader:
-                if len(row) <= max(state_idx, el_type_idx, el_year_idx):
-                    continue
-                row_state   = row[state_idx]
-                row_el_type = row[el_type_idx]
-                row_year    = row[el_year_idx]
-
-                all_states.add(row_state)
-
-                # el_types: filtered by state when state param is given
-                if state_param is None or row_state == state_param:
-                    all_el_types.add(row_el_type)
-
-                # years: filtered by state+el_type intersection, or state-only,
-                # or el_type-only, or all — depending on which params are present
-                state_match   = (state_param is None   or row_state   == state_param)
-                el_type_match = (el_type_param is None or row_el_type == el_type_param)
-                if state_match and el_type_match:
-                    all_years.add(row_year)
-
-        return jsonify({
-            'states':   sorted(all_states),
-            'el_types': sorted(all_el_types),
-            'years':    sorted(all_years, key=lambda y: int(y)),
-        }), 200
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        'states':   sorted(all_states),
+        'el_types': sorted(all_el_types),
+        'years':    sorted(all_years, key=year_key),
+    }), 200
 
 
 @app.route('/api/retro/count')
 def retro_count():
-    state   = request.args.get('state',   '').strip()
+    state   = request.args.get('state', '').strip()
     el_type = request.args.get('el_type', '').strip()
-    year    = request.args.get('year',    '').strip()
-
-    # Validate year when provided
+    year    = request.args.get('year', '').strip()
     if year:
         try:
-            year_int = int(year)
-            if not (1900 <= year_int <= 2100):
+            yi = int(year)
+            if not (1900 <= yi <= 2100):
                 raise ValueError
         except ValueError:
             return jsonify({'error': 'Invalid year parameter'}), 400
 
-    retro_path = os.path.join(BASE_DIR, 'RETRO.csv')
-    if not os.path.exists(retro_path):
-        return jsonify({'error': 'RETRO.csv not found'}), 404
-
-    try:
-        count = 0
-        with open(retro_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            try:
-                headers = next(reader)
-            except StopIteration:
-                # Completely empty file — treat as header-only
-                return jsonify({'count': 0})
-
-            try:
-                state_idx = headers.index('state_abb')
-                type_idx  = headers.index('el_type')
-                year_idx  = headers.index('el_year')
-            except ValueError:
-                return jsonify({'error': 'Invalid RETRO.csv format: missing columns'}), 500
-
-            for row in reader:
-                if len(row) <= max(state_idx, type_idx, year_idx):
+    meta = get_retro_metadata_dict()
+    count = 0
+    for s, types in meta.items():
+        if state and s != state:
+            continue
+        for t, years in types.items():
+            if el_type and t != el_type:
+                continue
+            for y, c in years.items():
+                if year and y != year:
                     continue
-                if state   and row[state_idx] != state:
-                    continue
-                if el_type and row[type_idx]  != el_type:
-                    continue
-                if year    and row[year_idx]  != year:
-                    continue
-                count += 1
-
-        return jsonify({'count': count})
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+                count += c
+    return jsonify({'count': count})
 
 
 @app.route('/api/reload', methods=['POST'])
