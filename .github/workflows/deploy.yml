@@ -11,7 +11,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via rsync
+        uses: easingthemes/ssh-deploy@main
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          REMOTE_HOST: 13.206.145.98
+          REMOTE_USER: ec2-user
+          TARGET: /home/ec2-user/Form20-backlog-tracker/
+          EXCLUDE: "/venv/, /env/, /.git/, *.db, *.json, *.csv, *.zip, *.log"
+
+      - name: Restart Service
         uses: appleboy/ssh-action@master
         with:
           host: 13.206.145.98
@@ -19,8 +31,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/Form20-backlog-tracker
-            git reset --hard
-            git pull origin ${{ github.ref_name }}
+            python3 -m venv venv
             source venv/bin/activate
-            pip install -r requirements.txt
+            pip install -r requirements.txt gunicorn
             sudo systemctl restart form20-dashboard.service
