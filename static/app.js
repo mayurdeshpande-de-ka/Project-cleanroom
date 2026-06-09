@@ -25,10 +25,14 @@ let pieChart   = null;
 let barChart   = null;
 
 // Dashboard-only filters (BP hidden by default)
-let dashShowBp  = false;
-let dashSirOnly = false;
+let dashShowBp   = false;
+let dashSirOnly  = false;
+let dashWeekFilter = '';   // week start date string e.g. "2026-06-01"
 
-let monthlyChart = null;
+let monthlyChart    = null;
+let _f20TotalYears  = 0;   // form20 distinct years (from SQLite stats)
+let _f20Total       = 0;   // form20 total election entries (from SQLite stats)
+let _f20ByType      = {};  // form20 by_type from SQLite stats (completed/total per type)
 
 // Glance Report chart instances
 let gWeekChart  = null;
@@ -38,7 +42,7 @@ const EL_TYPE_NAMES = { AE: 'Assembly', GE: 'General', BE: 'Bypoll', PE: 'Parlia
 const STATE_NAMES_MAP = {};  // populated lazily from filter dropdown
 
 const STATUS_CONFIG = {
-  'missing':    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-100',     dot: 'bg-red-400',     label: 'Missing'   },
+  'missing':    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-100',     dot: 'bg-red-400',     label: 'Remaining'   },
   'pending':    { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-100',   dot: 'bg-amber-400',   label: 'Pending'   },
   'downloaded': { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-100',    dot: 'bg-blue-400',    label: 'Downloaded'},
   'extracted':  { bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-100',  dot: 'bg-violet-400',  label: 'Extracted' },
@@ -102,6 +106,13 @@ async function loadStats() {
 
     const completed = (bs.db_pushed || 0) + (bs.completed || 0);
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    // Listing pipeline strip
+    set('kpi-co-count', completed);
+    const listPctEl  = document.getElementById('listing-pct');
+    const listProgBar = document.getElementById('listing-prog-bar');
+    if (listPctEl)  listPctEl.textContent  = pct + '%';
+    if (listProgBar) listProgBar.style.width = pct + '%';
 
     const pbFill = document.getElementById('progress-bar-fill');
     if (pbFill) pbFill.style.width = pct + '%';
@@ -460,18 +471,19 @@ window.handleKpiClick = function (status) {
 function setActiveKpi(status) {
   activeKpi = status;
   const kpiMap = {
-    downloaded: { id: 'kpi-downloaded', cls: 'kpi-active-blue'   },
-    extracted:  { id: 'kpi-extracted',  cls: 'kpi-active-violet' },
-    missing:    { id: 'kpi-missing',    cls: 'kpi-active-red'    },
+    downloaded: { id: 'kpi-downloaded', cls: 'kpi-active-blue'    },
+    extracted:  { id: 'kpi-extracted',  cls: 'kpi-active-violet'  },
+    missing:    { id: 'kpi-missing',    cls: 'kpi-active-red'      },
+    db_pushed:  { id: 'kpi-db-pushed',  cls: 'kpi-active-emerald' },
   };
-  ['downloaded', 'extracted', 'missing'].forEach(s => {
-    const cfg = kpiMap[s];
+  const allCls = ['kpi-active-blue', 'kpi-active-violet', 'kpi-active-red', 'kpi-active-emerald'];
+  Object.entries(kpiMap).forEach(([s, cfg]) => {
     const btn = document.getElementById(cfg.id);
     if (!btn) return;
     if (s === status) {
       btn.classList.add(cfg.cls);
     } else {
-      btn.classList.remove('kpi-active-blue', 'kpi-active-violet', 'kpi-active-red');
+      btn.classList.remove(...allCls);
     }
   });
 }
@@ -711,32 +723,8 @@ function bindEvents() {
     if (el) el.addEventListener('click', () => switchTab(t.id));
   });
 
-  const dashMonthFilter = document.getElementById('dash-month-filter');
-  const dashRefreshBtn  = document.getElementById('dash-refresh-btn');
-  if (dashMonthFilter) dashMonthFilter.addEventListener('change', loadDashboardStats);
-  if (dashRefreshBtn)  dashRefreshBtn.addEventListener('click',   loadDashboardStats);
-
-  // Dashboard SIR Only toggle
-  const dashSirBtn = document.getElementById('dash-sir-btn');
-  if (dashSirBtn) {
-    dashSirBtn.addEventListener('click', () => {
-      dashSirOnly = !dashSirOnly;
-      setDashToggle(dashSirBtn, dashSirOnly, 'priority_high', 'SIR Only', 'amber');
-      loadDashboardStats();
-    });
-  }
-
-  // Dashboard Show BP Years toggle
-  const dashBpBtn = document.getElementById('dash-bp-btn');
-  if (dashBpBtn) {
-    dashBpBtn.addEventListener('click', () => {
-      dashShowBp = !dashShowBp;
-      setDashToggle(dashBpBtn, dashShowBp,
-        dashShowBp ? 'filter_alt_off' : 'filter_alt',
-        dashShowBp ? 'Hide BP Years' : 'Show BP Years', 'indigo');
-      loadDashboardStats();
-    });
-  }
+  const dashRefreshBtn = document.getElementById('dash-refresh-btn');
+  if (dashRefreshBtn) dashRefreshBtn.addEventListener('click', loadDashboardStats);
 
   ['glance-month-filter', 'glance-state-filter', 'glance-type-filter'].forEach(id => {
     const el = document.getElementById(id);
@@ -752,6 +740,7 @@ function bindEvents() {
       const params = new URLSearchParams();
       if (state) params.set('state', state);
       if (type)  params.set('el_type', type);
+      params.set('hide_bp', '1');
 
       const orig = glancePdfBtn.innerHTML;
       glancePdfBtn.disabled = true;
@@ -769,10 +758,10 @@ function bindEvents() {
         const url  = URL.createObjectURL(blob);
         const a    = document.createElement('a');
         a.href = url;
-        a.download = m ? m[1] : 'Glance_Report.pdf';
+        a.download = m ? m[1] : 'Weekly_Report.pdf';
         a.click();
         URL.revokeObjectURL(url);
-        showToast('Glance Report PDF downloaded');
+        showToast('Weekly Report PDF downloaded');
       } catch (e) {
         showToast(e.message, true);
       } finally {
@@ -873,54 +862,446 @@ function bindEvents() {
 
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-async function loadDashboardStats() {
-  const monthFilter = (document.getElementById('dash-month-filter') || {}).value || '';
+// ── Dashboard extended analytics (retro, booth, voter roll, caste) ───────────
+let analyticsLoaded = false;
+
+async function loadDashboardAnalytics(forceRefresh = false) {
+  if (analyticsLoaded && !forceRefresh) return;
   try {
-    // Build shared dashboard filter params (BP hidden by default)
-    const statsParams = new URLSearchParams();
-    if (!dashShowBp)  statsParams.set('hide_bp', '1');
-    if (dashSirOnly)  statsParams.set('sir_only', '1');
-
-    const glanceParams = new URLSearchParams();
-    if (monthFilter)  glanceParams.set('month', monthFilter);
-    if (!dashShowBp)  glanceParams.set('hide_bp', '1');
-    if (dashSirOnly)  glanceParams.set('sir_only', '1');
-
-    const [stats, glance] = await Promise.all([
-      apiFetch('/api/stats?' + statsParams.toString()),
-      apiFetch('/api/glance_report?' + glanceParams.toString()),
-    ]);
-
-    // Populate month dropdown once
-    const sel = document.getElementById('dash-month-filter');
-    if (sel && glance.available_months && sel.options.length <= 1) {
-      glance.available_months.forEach(m => {
-        const [yr, mo] = m.split('-');
-        sel.appendChild(new Option(
-          new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' }), m
-        ));
-      });
+    const res = await fetch('/api/dashboard/analytics');
+    if (!res.ok && res.status !== 202) { console.error('analytics fetch:', res.status); return; }
+    const d = await res.json();
+    renderRetroPanel(d.retro);
+    renderBoothPanel(d.booth);
+    renderVoterPanel(d.voter_roll);
+    renderCastePanel(d.caste);
+    if (d.mapping_years || d.mapping_entries) {
+      updateForm20WithMapping(d.mapping_years || 0, d.mapping_entries || 0, _f20Total, d.mapping_by_type || {});
     }
+    if (res.status === 200) {
+      analyticsLoaded = true;
+    } else {
+      // Cache still building — retry in 15s to fill in by_type and top_states
+      setTimeout(() => loadDashboardAnalytics(true), 15000);
+    }
+  } catch (e) {
+    console.error('loadDashboardAnalytics:', e);
+  }
+}
 
-    const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    const bs     = stats.by_status || {};
-    const total  = stats.total || 0;
-    const dbPushed = (bs.db_pushed || 0) + (bs.completed || 0);
-    const pct    = total > 0 ? Math.round((dbPushed / total) * 100) : 0;
+function fmtNum(n) {
+  if (n == null) return '—';
+  return Number(n).toLocaleString('en-IN');
+}
 
-    // KPI cards
-    setEl('dash-total',      total);
-    setEl('dash-db-pushed',  dbPushed);
-    setEl('dash-downloaded', bs.downloaded || 0);
-    setEl('dash-missing',    bs.missing    || 0);
+function lockPanel(bodyId, errMsg) {
+  const el = document.getElementById(bodyId);
+  if (!el) return;
+  const notExist = errMsg && (errMsg.includes('does not exist') || errMsg.includes('relation'));
+  const noAccess = errMsg && errMsg.includes('permission');
+  const icon   = notExist ? 'schedule' : 'lock';
+  const title  = notExist ? 'Table not yet populated' : noAccess ? 'DB access required' : 'Unavailable';
+  const detail = notExist ? 'Data will appear once this table is loaded in RDS.'
+                : noAccess ? 'Contact DB admin to grant SELECT access on this table.'
+                : 'Unable to load data from RDS.';
+  el.innerHTML = `
+    <div class="flex flex-col items-center justify-center gap-2 py-6 text-center">
+      <span class="material-symbols-outlined text-gray-300" style="font-size:28px;">${icon}</span>
+      <p class="text-[11px] font-semibold text-gray-400">${title}</p>
+      <p class="text-[10px] text-gray-300 max-w-[220px] leading-relaxed">${detail}</p>
+    </div>`;
+}
 
-    // Progress
-    setEl('dash-progress-pct', pct + '%');
-    setEl('dash-progress-sub', `${dbPushed.toLocaleString()} / ${total.toLocaleString()} records pushed to DB`);
-    const progBar    = document.getElementById('dash-prog-bar');
-    const progBarKpi = document.getElementById('dash-prog-bar-kpi');
-    if (progBar)    progBar.style.width    = pct + '%';
-    if (progBarKpi) progBarKpi.style.width = pct + '%';
+function typeColor(type) {
+  const m = { AE:'#6366f1', GE:'#3b82f6', 'AE-BP':'#a78bfa', 'GE-BP':'#93c5fd' };
+  return m[type] || '#94a3b8';
+}
+
+function renderForm20Panel(stats) {
+  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const bs        = stats.by_status || {};
+  const total     = stats.total || 0;
+  const completed = (bs.db_pushed || 0) + (bs.completed || 0);
+  const pct       = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const circ      = 163.4;
+  const dash      = circ * (1 - pct / 100);
+
+  // Ring chart
+  const ring    = document.getElementById('f20-ring');
+  const ringPct = document.getElementById('f20-ring-pct');
+  if (ring)    ring.style.strokeDashoffset = dash;
+  if (ringPct) ringPct.textContent = pct + '%';
+
+  _f20TotalYears = stats.total_years || 0;
+  _f20Total      = stats.total       || 0;
+  _f20ByType     = stats.by_type     || {};
+
+  setEl('f20-pct',        pct + '%');
+  setEl('f20-pct-badge',  pct + '% complete');
+  setEl('f20-counts',     `${completed.toLocaleString()} / ${total.toLocaleString()} elections in DB`);
+  setEl('f20-total-years', '—');          // overwritten by mapping when analytics loads
+  setEl('f20-years-in-db', stats.total_years ?? '—');
+  const progEl = document.getElementById('f20-prog');
+  if (progEl) progEl.style.width = pct + '%';
+
+  // By election type (AE, GE — excluding BP variants)
+  const typeWrap = document.getElementById('f20-type-rows');
+  if (typeWrap && stats.by_type) {
+    const TYPE_META = {
+      'AE': { label: 'Assembly', bg: 'bg-gray-700'  },
+      'GE': { label: 'General',  bg: 'bg-blue-500'  },
+    };
+    const entries = Object.entries(stats.by_type)
+      .filter(([t]) => !t.includes('-BP'))
+      .sort((a, b) => b[1].total - a[1].total);
+
+    typeWrap.innerHTML = entries.map(([type, d]) => {
+      const p   = d.total > 0 ? Math.round((d.completed / d.total) * 100) : 0;
+      const m   = TYPE_META[type] || { label: type, bg: 'bg-gray-400' };
+      const pctColor = p === 100 ? 'text-emerald-600' : p >= 80 ? 'text-blue-600' : p >= 50 ? 'text-amber-600' : 'text-rose-500';
+      return `
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 w-[90px] shrink-0">
+            <span class="w-2 h-2 rounded-full ${m.bg} shrink-0"></span>
+            <span class="text-[10.5px] font-semibold text-gray-700">${type}</span>
+            <span class="text-[9.5px] text-gray-400">${m.label}</span>
+          </div>
+          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full rounded-full ${m.bg} bar-fill" style="width:${p}%"></div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0 w-[72px] justify-end">
+            <span class="text-[11px] font-bold tabular-nums ${pctColor}">${p}%</span>
+            <span class="text-[9.5px] text-gray-400 tabular-nums">${d.completed}/${d.total}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // Top completed states
+  const stateWrap = document.getElementById('f20-state-rows');
+  if (stateWrap && stats.by_state) {
+    const topStates = [...stats.by_state]
+      .filter(s => s.completed > 0)
+      .sort((a, b) => b.completed - a.completed)
+      .slice(0, 8);
+    const max = topStates[0]?.completed || 1;
+    stateWrap.className = 'grid grid-cols-4 gap-1.5';
+    stateWrap.innerHTML = topStates.map(s => {
+      const intensity = Math.round((s.completed / max) * 9) + 1;
+      const bg = intensity >= 8 ? 'bg-gray-100 border-gray-300' :
+                 intensity >= 5 ? 'bg-gray-50 border-gray-200' : 'bg-gray-50 border-gray-100';
+      const tc = intensity >= 8 ? 'text-gray-800' : 'text-gray-600';
+      return `
+        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5">
+          <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
+          <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${s.completed}</span>
+        </div>`;
+    }).join('');
+  }
+}
+
+function updateForm20WithMapping(mappingYears, mappingEntries, form20Total, mappingByType = {}) {
+  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  // ── Entry-level coverage: (Form20 unique entries) / (mapping unique entries) ──
+  if (mappingEntries && form20Total) {
+    const pct  = Math.round((form20Total / mappingEntries) * 100);
+    const circ = 163.4;
+    const dash = circ * (1 - pct / 100);
+    const ring    = document.getElementById('f20-ring');
+    const ringPct = document.getElementById('f20-ring-pct');
+    if (ring)    ring.style.strokeDashoffset = dash;
+    if (ringPct) ringPct.textContent = pct + '%';
+    setEl('f20-pct',       pct + '%');
+    setEl('f20-pct-label', 'coverage');
+    setEl('f20-pct-badge', pct + '% coverage');
+    setEl('f20-counts',    `${form20Total.toLocaleString()} / ${mappingEntries.toLocaleString()} elections in Form 20`);
+  }
+
+  // ── Year + entry strip ──
+  if (mappingYears)   setEl('f20-total-years',     mappingYears);
+  if (_f20TotalYears) setEl('f20-years-in-db',     _f20TotalYears);
+  if (mappingEntries) setEl('f20-mapping-entries', mappingEntries);
+
+  // ── By Election Type: re-render with 262 mapping totals as denominator ──
+  // Numerator = pipeline-completed elections (from SQLite _f20ByType)
+  // Denominator = total elections in AC-PC mapping (from RDS mapping_by_type)
+  const typeWrap = document.getElementById('f20-type-rows');
+  if (typeWrap && mappingByType && Object.keys(mappingByType).length > 0) {
+    const TYPE_META = {
+      'AE': { label: 'Assembly', bg: 'bg-gray-700'  },
+      'GE': { label: 'General',  bg: 'bg-blue-500'  },
+    };
+    const entries = Object.entries(mappingByType)
+      .filter(([t]) => !t.includes('-BP'))
+      .sort((a, b) => b[1] - a[1]);
+
+    typeWrap.innerHTML = entries.map(([type, mappingTotal]) => {
+      const pipe  = _f20ByType[type] || { completed: 0, total: 0 };
+      const done  = pipe.completed || 0;
+      const p     = mappingTotal > 0 ? Math.round((done / mappingTotal) * 100) : 0;
+      const m     = TYPE_META[type] || { label: type, bg: 'bg-gray-400' };
+      const pctColor = p === 100 ? 'text-emerald-600' : p >= 80 ? 'text-blue-600' : p >= 50 ? 'text-amber-600' : 'text-rose-500';
+      return `
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 w-[90px] shrink-0">
+            <span class="w-2 h-2 rounded-full ${m.bg} shrink-0"></span>
+            <span class="text-[10.5px] font-semibold text-gray-700">${type}</span>
+            <span class="text-[9.5px] text-gray-400">${m.label}</span>
+          </div>
+          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full rounded-full ${m.bg} bar-fill" style="width:${p}%"></div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0 w-[72px] justify-end">
+            <span class="text-[11px] font-bold tabular-nums ${pctColor}">${p}%</span>
+            <span class="text-[9.5px] text-gray-400 tabular-nums">${done}/${mappingTotal}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+}
+
+function renderRetroPanel(r) {
+  if (!r || !r.available) {
+    const typeWrap  = document.getElementById('retro-type-rows');
+    const stateWrap = document.getElementById('retro-state-rows');
+    if (typeWrap)  typeWrap.innerHTML  = `<p class="text-[10.5px] text-gray-400 text-center py-2">${r?.error?.includes('permission') ? 'GRANT SELECT required' : (r?.error || 'Unavailable')}</p>`;
+    if (stateWrap) stateWrap.innerHTML = '';
+    return;
+  }
+
+  const acTotal = r.ac_total     || 0;
+  const acAvail = r.ac_available || 0;
+  const pctRaw  = acTotal > 0 ? (acAvail / acTotal) * 100 : 0;
+  const pct     = parseFloat(pctRaw.toFixed(2));   // 2-decimal accuracy
+  const circ    = 163.4;
+  const dash    = circ * (1 - Math.min(pct, 100) / 100);
+
+  // Ring chart
+  const ring    = document.getElementById('retro-ring');
+  const ringPct = document.getElementById('retro-ring-pct');
+  if (ring)    ring.style.strokeDashoffset = dash;
+  if (ringPct) ringPct.textContent = pct + '%';
+
+  // Main numbers
+  const setPct = document.getElementById('retro-pct');
+  const setCov = document.getElementById('retro-covered-label');
+  const setBar = document.getElementById('retro-prog');
+  if (setPct) setPct.textContent = pct + '%';
+  if (setCov) setCov.textContent = fmtNum(acAvail) + ' / ' + fmtNum(acTotal) + ' ACs in DB';
+  if (setBar) setBar.style.width = Math.min(pct, 100) + '%';
+
+  // ── By Election Type (AE / GE — non-BP) ──────────────────────────────────
+  const typeWrap = document.getElementById('retro-type-rows');
+  if (typeWrap && r.by_type_ac) {
+    const TYPE_META = {
+      'AE': { label: 'Assembly', bg: 'bg-indigo-500', text: 'text-indigo-600' },
+      'GE': { label: 'General',  bg: 'bg-blue-500',   text: 'text-blue-600'  },
+    };
+    typeWrap.innerHTML = r.by_type_ac.map(t => {
+      const pRaw = t.total > 0 ? (t.available / t.total) * 100 : 0;
+      const p    = parseFloat(pRaw.toFixed(2));   // 2-decimal accuracy
+      const m = TYPE_META[t.type] || { label: t.type, bg: 'bg-gray-400', text: 'text-gray-600' };
+      const pctColor = p >= 99.99 ? 'text-emerald-600' : p >= 80 ? 'text-blue-600' : p >= 50 ? 'text-amber-600' : 'text-rose-500';
+      return `
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 w-[90px] shrink-0">
+            <span class="w-2 h-2 rounded-full ${m.bg} shrink-0"></span>
+            <span class="text-[10.5px] font-semibold text-gray-700">${t.type}</span>
+            <span class="text-[9.5px] text-gray-400">${m.label}</span>
+          </div>
+          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full rounded-full ${m.bg} bar-fill" style="width:${Math.min(p, 100)}%"></div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0 w-[72px] justify-end">
+            <span class="text-[11px] font-bold tabular-nums ${pctColor}">${p}%</span>
+            <span class="text-[9.5px] text-gray-400 tabular-nums">${fmtNum(t.available)}/${fmtNum(t.total)}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Top States — pill grid with AC count + pct ───────────────────────────
+  const stateWrap = document.getElementById('retro-state-rows');
+  if (stateWrap && r.top_states_ac) {
+    const max = r.top_states_ac[0]?.available || 1;
+    stateWrap.className = 'grid grid-cols-4 gap-1.5';
+    stateWrap.innerHTML = r.top_states_ac.map(s => {
+      const intensity = Math.round((s.available / max) * 9) + 1;
+      const bg = intensity >= 8 ? 'bg-indigo-100 border-indigo-200' :
+                 intensity >= 5 ? 'bg-indigo-50 border-indigo-100' : 'bg-gray-50 border-gray-100';
+      const tc = intensity >= 8 ? 'text-indigo-700' : intensity >= 5 ? 'text-indigo-600' : 'text-gray-600';
+      return `
+        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.available)} / ${fmtNum(s.expected)} ACs (${s.pct}%)">
+          <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
+          <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.available)}</span>
+          <span class="text-[9px] text-gray-400 tabular-nums leading-none">${s.pct}%</span>
+        </div>`;
+    }).join('');
+  }
+}
+
+function renderBoothPanel(d) {
+  const pctEl = document.getElementById('booth-pct');
+  const body  = document.getElementById('booth-body');
+  if (!d || !d.available) {
+    if (pctEl) pctEl.textContent = '—';
+    if (body)  body.innerHTML = _lockHTML(d?.error);
+    return;
+  }
+  const pct = d.total_acs > 0 ? Math.round((d.acs_with_data / d.total_acs) * 100) : 0;
+  if (pctEl) { pctEl.textContent = pct + '%'; }
+
+  if (!body) return;
+  const max = d.by_state?.[0]?.booths || 1;
+
+  body.innerHTML = `
+    <!-- KPI strip -->
+    <div class="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-50">
+      ${[
+        { val: fmtNum(d.states),       label:'States',  color:'text-emerald-600' },
+        { val: fmtNum(d.booths),       label:'Booths',  color:'text-gray-800'    },
+        { val: fmtNum(d.total_voters), label:'Voters',  color:'text-gray-800'    },
+      ].map(k => `
+        <div class="flex flex-col items-center py-3">
+          <span class="text-[17px] font-black tabular-nums leading-none ${k.color}">${k.val}</span>
+          <span class="text-[9.5px] text-gray-400 font-medium mt-1">${k.label}</span>
+        </div>`).join('')}
+    </div>
+    <!-- AC coverage progress -->
+    <div class="px-4 py-3 border-b border-gray-50">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest">AC Coverage</span>
+        <span class="text-[10.5px] font-bold text-emerald-600">${pct}%  <span class="font-normal text-gray-400">${fmtNum(d.acs_with_data)} / ${fmtNum(d.total_acs)}</span></span>
+      </div>
+      <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div class="h-full bg-emerald-400 rounded-full bar-fill" style="width:${pct}%"></div>
+      </div>
+    </div>
+    <!-- Top states -->
+    <div class="px-4 py-3">
+      <p class="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Top States by Booths</p>
+      <div class="flex flex-col gap-1.5">
+        ${(d.by_state || []).slice(0, 6).map(s => {
+          const p = Math.round((s.booths / max) * 100);
+          return `<div class="flex items-center gap-2">
+            <span class="text-[10.5px] font-semibold text-gray-700 w-7 shrink-0">${s.state}</span>
+            <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full bg-emerald-400 rounded-full" style="width:${p}%"></div>
+            </div>
+            <span class="text-[10px] tabular-nums text-gray-500 w-16 text-right shrink-0">${fmtNum(s.booths)}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+function renderVoterPanel(d) {
+  if (!d || !d.available) {
+    lockPanel('voter-body', d?.error);
+    const el = document.getElementById('voter-count'); if (el) el.textContent = '—';
+    return;
+  }
+  const el = document.getElementById('voter-count'); if (el) el.textContent = fmtNum(d.total_voters);
+  const body = document.getElementById('voter-body');
+  if (!body) return;
+  const maxV = d.by_state?.[0]?.voters || 1;
+  body.innerHTML = `
+    <div class="grid grid-cols-3 gap-2 mb-1">
+      <div class="bg-gray-50 rounded-lg p-2 text-center">
+        <p class="text-[18px] font-bold text-blue-600 tabular-nums">${fmtNum(d.states)}</p>
+        <p class="text-[10px] text-gray-400">States</p>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-2 text-center">
+        <p class="text-[18px] font-bold text-gray-800 tabular-nums">${fmtNum(d.acs_with_data)}</p>
+        <p class="text-[10px] text-gray-400">ACs</p>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-2 text-center">
+        <p class="text-[18px] font-bold text-gray-800 tabular-nums">${fmtNum(d.years)}</p>
+        <p class="text-[10px] text-gray-400">Years</p>
+      </div>
+    </div>
+    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Top States by Voters</p>
+    ${(d.by_state || []).map(s => `
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-semibold text-gray-700 w-8 shrink-0">${s.state}</span>
+        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full bg-blue-400 rounded-full" style="width:${Math.round((s.voters/maxV)*100)}%"></div>
+        </div>
+        <span class="text-[10.5px] tabular-nums text-gray-500 w-20 text-right">${fmtNum(s.voters)}</span>
+      </div>`).join('')}`;
+}
+
+function _lockHTML(errMsg) {
+  const notExist = errMsg && (errMsg.includes('does not exist') || errMsg.includes('relation'));
+  const noPerm   = errMsg && errMsg.includes('permission');
+  const icon  = notExist ? 'schedule' : 'lock';
+  const title = notExist ? 'Table not yet populated' : noPerm ? 'DB access required' : 'Unavailable';
+  const detail= notExist ? 'Data will appear once this table is loaded in RDS.'
+              : noPerm   ? 'Contact DB admin to grant SELECT access on this table.'
+              : (errMsg || 'Unable to load data');
+  return `<div class="flex flex-col items-center justify-center gap-2 py-10 px-4 text-center flex-1">
+    <span class="material-symbols-outlined text-gray-200" style="font-size:28px;">${icon}</span>
+    <p class="text-[11px] font-semibold text-gray-400">${title}</p>
+    <p class="text-[10px] text-gray-300 max-w-[180px] leading-relaxed">${detail}</p>
+  </div>`;
+}
+
+function renderCastePanel(d) {
+  const pctEl = document.getElementById('caste-pct');
+  const body  = document.getElementById('caste-body');
+  if (!d || !d.available) {
+    if (pctEl) pctEl.textContent = '—';
+    if (body)  body.innerHTML = _lockHTML(d?.error);
+    return;
+  }
+  if (pctEl) pctEl.textContent = fmtNum(d.acs_with_data) + ' ACs';
+  if (!body) return;
+  const maxC = d.top_states?.[0]?.acs || 1;
+  body.innerHTML = `
+    <div class="grid grid-cols-3 gap-2 mb-1">
+      <div class="bg-gray-50 rounded-lg p-2 text-center">
+        <p class="text-[18px] font-bold text-amber-600 tabular-nums">${fmtNum(d.states)}</p>
+        <p class="text-[10px] text-gray-400">States</p>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-2 text-center">
+        <p class="text-[18px] font-bold text-gray-800 tabular-nums">${fmtNum(d.categories)}</p>
+        <p class="text-[10px] text-gray-400">Categories</p>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-2 text-center">
+        <p class="text-[18px] font-bold text-gray-800 tabular-nums">${fmtNum(d.total_rows)}</p>
+        <p class="text-[10px] text-gray-400">Records</p>
+      </div>
+    </div>
+    ${d.by_category?.length ? `
+      <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">By Category</p>
+      ${d.by_category.map(c => `
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] font-semibold text-gray-700 w-14 shrink-0 truncate">${c.category || 'Other'}</span>
+          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full bg-amber-400 rounded-full" style="width:${maxC>0?Math.round((c.acs/maxC)*100):0}%"></div>
+          </div>
+          <span class="text-[10.5px] tabular-nums text-gray-500 w-16 text-right">${fmtNum(c.acs)} ACs</span>
+        </div>`).join('')}` : ''}
+    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 mt-1">Top States</p>
+    ${(d.top_states || []).map(s => `
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-semibold text-gray-700 w-8 shrink-0">${s.state}</span>
+        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full bg-amber-400 rounded-full" style="width:${Math.round((s.acs/maxC)*100)}%"></div>
+        </div>
+        <span class="text-[10.5px] tabular-nums text-gray-500 w-16 text-right">${fmtNum(s.acs)} ACs</span>
+      </div>`).join('')}`;
+}
+
+async function loadDashboardStats() {
+  try {
+    const stats = await apiFetch('/api/stats?hide_bp=1');
+
+    const bs      = stats.by_status || {};
+    const total   = stats.total || 0;
+    const completed = (bs.db_pushed || 0) + (bs.completed || 0);
+    const pct     = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     // Sidebar progress sync
     const pctSidebar = document.getElementById('progress-pct-sidebar');
@@ -928,160 +1309,128 @@ async function loadDashboardStats() {
     const progText   = document.getElementById('progress-text');
     if (pctSidebar) pctSidebar.textContent = pct + '%';
     if (pbFill)     pbFill.style.width     = pct + '%';
-    if (progText)   progText.textContent   = `${dbPushed} / ${total} completed`;
+    if (progText)   progText.textContent   = `${completed} / ${total} completed`;
 
-    // Pipeline stages
-    setEl('pipe-missing',    bs.missing    || 0);
-    setEl('pipe-downloaded', bs.downloaded || 0);
-    setEl('pipe-extracted',  bs.extracted  || 0);
-    setEl('pipe-db-pushed',  dbPushed);
+    // Form 20 analytics card — initial paint from SQLite
+    renderForm20Panel(stats);
 
-    // ── Status breakdown — horizontal bar chart ──────────────────────────────
-    const pieLabels = ['Downloaded', 'Extracted', 'DB Pushed', 'Missing', 'Pending'];
-    const pieVals   = [
-      bs.downloaded || 0,
-      bs.extracted  || 0,
-      dbPushed,
-      bs.missing    || 0,
-      bs.pending    || 0,
-    ];
-    const pieColors = ['#3b82f6', '#7c3aed', '#10b981', '#ef4444', '#f59e0b'];
-
-    const pieCtx = document.getElementById('statusPieChart')?.getContext('2d');
-    if (pieCtx) {
-      if (pieChart) { pieChart.destroy(); pieChart = null; }
-      pieChart = new Chart(pieCtx, {
-        type: 'bar',
-        data: {
-          labels: pieLabels,
-          datasets: [{
-            data: pieVals,
-            backgroundColor: pieColors,
-            borderRadius: 4,
-            borderWidth: 0,
-          }],
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: {
-              beginAtZero: true,
-              ticks: { precision: 0, font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
-              grid:  { color: '#f3f4f6' },
-            },
-            y: {
-              ticks: { font: { size: 11, family: 'Inter' }, color: '#374151' },
-              grid:  { display: false },
-            },
-          },
-        },
-      });
+    // ── Load live Form 20 card stats (reads local JSON, instant) ─────────────
+    try {
+      const liveStats = await apiFetch('/api/form20_card_stats');
+      populateForm20Card(liveStats);
+    } catch (e) {
+      console.warn('form20_card_stats unavailable:', e);
     }
 
-    // ── Monthly bar chart ────────────────────────────────────────────────────
-    const allMonthCounts = glance.monthly_counts || {};
-    const thisMonthKey   = new Date().toISOString().slice(0, 7);
-    const sortedMonths   = Object.keys(allMonthCounts).sort();
-    const monthLabels    = sortedMonths.map(m => {
-      const [yr, mo] = m.split('-');
-      return new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'short', year: '2-digit' });
-    });
-
-    if (monthlyChart) { monthlyChart.destroy(); monthlyChart = null; }
-    const mCtx = document.getElementById('monthlyBarChart')?.getContext('2d');
-    if (mCtx) {
-      monthlyChart = new Chart(mCtx, {
-        type: 'bar',
-        data: {
-          labels: monthLabels,
-          datasets: [{
-            label: 'DB Pushed',
-            data:  sortedMonths.map(m => allMonthCounts[m]),
-            backgroundColor: sortedMonths.map(m => m === thisMonthKey ? '#10b981' : '#c7d2fe'),
-            borderColor:     sortedMonths.map(m => m === thisMonthKey ? '#059669' : '#6366f1'),
-            borderWidth: 1,
-            borderRadius: 5,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: { precision: 0, font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
-              grid:  { color: '#f3f4f6' },
-            },
-            x: {
-              ticks: { font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
-              grid:  { display: false },
-            },
-          },
-        },
-      });
-    }
-
-    // ── Weekly velocity chart ────────────────────────────────────────────────
-    const allWeekCounts = glance.weekly_counts || {};
-    let weekKeys, weekCounts, subtitle;
-    if (monthFilter && Object.keys(glance.weekly_in_month || {}).length > 0) {
-      const wim   = glance.weekly_in_month;
-      weekKeys    = Object.keys(wim).sort();
-      weekCounts  = weekKeys.map(k => wim[k]);
-      subtitle    = 'Weeks in ' + new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
-    } else {
-      weekKeys    = Object.keys(allWeekCounts).sort();
-      weekCounts  = weekKeys.map(k => allWeekCounts[k]);
-      subtitle    = monthFilter ? 'No DB pushes recorded for this month' : 'All weeks since tracking began';
-    }
-    setEl('weekly-chart-subtitle', subtitle);
-
-    if (barChart) {
-      barChart.data.labels              = weekKeys.map(k => k.slice(5, 10));
-      barChart.data.datasets[0].data   = weekCounts;
-      barChart.update();
-    } else {
-      const wCtx = document.getElementById('weeklyBarChart')?.getContext('2d');
-      if (wCtx) {
-        barChart = new Chart(wCtx, {
-          type: 'bar',
-          data: {
-            labels: weekKeys.map(k => k.slice(5, 10)),
-            datasets: [{
-              label: 'DB Pushed',
-              data:  weekCounts,
-              backgroundColor: '#c7d2fe',
-              borderColor:     '#6366f1',
-              borderWidth: 1,
-              borderRadius: 4,
-            }],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: { precision: 0, font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
-                grid:  { color: '#f3f4f6' },
-              },
-              x: {
-                ticks: { font: { size: 10, family: 'Inter' }, color: '#9ca3af' },
-                grid:  { display: false },
-              },
-            },
-          },
-        });
-      }
-    }
+    // Extended analytics panels (Retro, Booth, Caste) from RDS
+    const isManualRefresh = document.activeElement?.id === 'dash-refresh-btn';
+    loadDashboardAnalytics(isManualRefresh);
 
   } catch (e) { console.error('loadDashboardStats:', e); }
 }
+
+// ── Populate Form 20 card from live JSON stats ────────────────────────────────
+function populateForm20Card(d) {
+  if (!d) return;
+  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  const form20  = d.form20_entries  || 0;   // 175 unique (state, type, year) in Form 20
+  const acpc    = d.acpc_entries    || 0;   // 560 unique (state, type, year) in AC-PC mapping
+  const pct     = d.coverage_pct   || 0;
+  const circ    = 163.4;
+  const dash    = circ * (1 - pct / 100);
+
+  // Ring chart + % text
+  const ring    = document.getElementById('f20-ring');
+  const ringPct = document.getElementById('f20-ring-pct');
+  if (ring)    ring.style.strokeDashoffset = dash;
+  if (ringPct) ringPct.textContent = pct + '%';
+
+  setEl('f20-pct',       pct + '%');
+  setEl('f20-pct-label', 'coverage');
+  setEl('f20-pct-badge', pct + '% complete');
+  setEl('f20-counts',    `${form20.toLocaleString()} / ${acpc.toLocaleString()} elections in Form 20`);
+
+  // Year strip
+  const yearsInForm20  = (d.years_in_form20  || []).length;
+  const yearsInMapping = (d.years_in_mapping || []).length;
+  setEl('f20-total-years',     yearsInMapping);  // MAPPING column
+  setEl('f20-years-in-db',     yearsInForm20);   // IN FORM 20 column
+  setEl('f20-mapping-entries', acpc);            // MAPPING ENTRIES column
+
+  // Update globals so updateForm20WithMapping (from RDS analytics) uses correct numerator/denominator
+  _f20Total = form20;
+  // Overwrite _f20ByType with ACTUAL Form 20 counts so the RDS override paints correctly too
+  _f20ByType = {};
+  Object.entries(d.by_type || {}).forEach(([type, td]) => {
+    _f20ByType[type] = { completed: td.in_form20 || 0, total: td.in_form20 || 0 };
+  });
+
+  // ── By election type breakdown ─────────────────────────────────────────────
+  const typeWrap = document.getElementById('f20-type-rows');
+  if (typeWrap && d.by_type) {
+    const TYPE_META = {
+      'AE': { label: 'Assembly', bg: 'bg-gray-700'  },
+      'GE': { label: 'General',  bg: 'bg-blue-500'  },
+    };
+    const entries = Object.entries(d.by_type)
+      .filter(([t]) => !t.includes('-BP'))
+      .sort((a, b) => b[1].in_mapping - a[1].in_mapping);
+
+    typeWrap.innerHTML = entries.map(([type, td]) => {
+      const done    = td.in_form20  || 0;
+      const mapTot  = td.in_mapping || 0;
+      const p       = mapTot > 0 ? Math.round((done / mapTot) * 100) : 0;
+      const m       = TYPE_META[type] || { label: type, bg: 'bg-gray-400' };
+      const pctColor = p === 100 ? 'text-emerald-600' : p >= 80 ? 'text-blue-600' : p >= 50 ? 'text-amber-600' : 'text-rose-500';
+      return `
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 w-[90px] shrink-0">
+            <span class="w-2 h-2 rounded-full ${m.bg} shrink-0"></span>
+            <span class="text-[10.5px] font-semibold text-gray-700">${type}</span>
+            <span class="text-[9.5px] text-gray-400">${m.label}</span>
+          </div>
+          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full rounded-full ${m.bg} bar-fill" style="width:${p}%"></div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0 w-[72px] justify-end">
+            <span class="text-[11px] font-bold tabular-nums ${pctColor}">${p}%</span>
+            <span class="text-[9.5px] text-gray-400 tabular-nums">${done}/${mapTot}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Top states from Form 20 ───────────────────────────────────────────────
+  const stateWrap = document.getElementById('f20-state-rows');
+  if (stateWrap && d.top_states && d.top_states.length > 0) {
+    const STATE_AC_COUNTS = {
+      'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CG': 90,  'CT': 90,  'GA': 40,
+      'GJ': 182, 'HR': 90,  'HP': 68,  'JH': 81,  'KA': 224, 'KL': 140, 'MP': 230,
+      'MH': 288, 'MN': 60,  'ML': 60,  'MZ': 40,  'NL': 60,  'OR': 147, 'PB': 117,
+      'RJ': 200, 'SK': 32,  'TN': 234, 'TS': 119, 'TR': 60,  'UP': 403, 'UK': 70,
+      'WB': 294, 'DL': 70,  'PY': 30,  'JK': 90,  'LD': 1,   'AN': 1,   'CH': 1
+    };
+    const max = d.top_states[0]?.count || 1;
+    stateWrap.className = 'grid grid-cols-4 gap-1.5';
+    stateWrap.innerHTML = d.top_states.map(s => {
+      const intensity = Math.round((s.count / max) * 9) + 1;
+      const bg = intensity >= 8 ? 'bg-gray-100 border-gray-300' :
+                 intensity >= 5 ? 'bg-gray-50 border-gray-200' : 'bg-gray-50 border-gray-100';
+      const tc = intensity >= 8 ? 'text-gray-800' : 'text-gray-600';
+      const acCount = STATE_AC_COUNTS[s.state] ? `(${STATE_AC_COUNTS[s.state]})` : '';
+      return `
+        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5">
+          <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
+          <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">
+            ${s.count} <span class="text-[10px] font-semibold text-gray-500 tracking-tight ml-0.5">${acCount}</span>
+          </span>
+        </div>`;
+    }).join('');
+  }
+}
+
+
 
 
 // ── Glance Report ─────────────────────────────────────────────────────────────
@@ -1094,6 +1443,7 @@ async function loadGlancePanel() {
     if (monthFilter) params.append('month',   monthFilter);
     if (stateFilter) params.append('state',   stateFilter);
     if (typeFilter)  params.append('el_type', typeFilter);
+    params.append('hide_bp', '1');
 
     const glance = await apiFetch('/api/glance_report?' + params.toString());
 
@@ -1115,9 +1465,10 @@ async function loadGlancePanel() {
       if (mainState) Array.from(mainState.options).forEach(o => { if (o.value) stSel.add(new Option(o.text, o.value)); });
     }
     const tySel = document.getElementById('glance-type-filter');
-    if (tySel && tySel.options.length <= 1) {
-      const mainType = document.getElementById('filter-type');
-      if (mainType) Array.from(mainType.options).forEach(o => { if (o.value) tySel.add(new Option(o.text, o.value)); });
+    if (tySel && tySel.options.length <= 1 && filterMetadata) {
+      const allTypes = new Set();
+      Object.values(filterMetadata).forEach(types => Object.keys(types).forEach(t => allTypes.add(t)));
+      Array.from(allTypes).sort().forEach(t => tySel.add(new Option(t, t)));
     }
 
     const accordion = document.getElementById('glance-panel-accordion');
@@ -1139,57 +1490,119 @@ async function loadGlancePanel() {
       return;
     }
 
-    accordion.innerHTML = allWeeks.map((w, i) => {
-      const isCurrent = w.is_current;
+    // ── Build state → { years: Set, byWeek: {weekLabel: count} } map ──────────
+    // weekLabels from allWeeks in ascending order (oldest → newest, max 4)
+    const weekLabels = allWeeks.map(w => w.week).reverse(); // oldest first
 
-      const badge = isCurrent
-        ? `<span class="ml-2 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">Current</span>`
-        : '';
+    const stateMap = {};
+    allWeeks.forEach(w => {
+      w.records.forEach(r => {
+        const parts = String(r.key).split('-');
+        const st = parts[0] || '?';
+        const yr = parts.length >= 2 ? parts[parts.length - 1] : '';
+        const ty = parts.length >= 3 ? parts.slice(1, -1).join('-') : '';
+        if (!stateMap[st]) stateMap[st] = { elections: [], byWeek: {} };
+        stateMap[st].elections.push({ type: ty, year: yr, key: r.key, date: r.date });
+        stateMap[st].byWeek[w.week] = (stateMap[st].byWeek[w.week] || 0) + 1;
+      });
+    });
 
-      const rows = w.records.map(r => `
-        <tr class="hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0">
-          <td class="py-2 px-5 text-[12px] font-mono text-gray-700 font-medium">${r.key}</td>
-          <td class="py-2 px-5 text-[11.5px] text-gray-400">${r.date}</td>
-          <td class="py-2 px-5">
-            <span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-0.5 rounded-full">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-              DB Pushed
-            </span>
-          </td>
-        </tr>`).join('');
+    const stateNames = {
+      AP:'Andhra Pradesh', AR:'Arunachal Pradesh', AS:'Assam', BR:'Bihar', CG:'Chhattisgarh',
+      GA:'Goa', GJ:'Gujarat', HR:'Haryana', HP:'Himachal Pradesh', JH:'Jharkhand',
+      KA:'Karnataka', KL:'Kerala', MP:'Madhya Pradesh', MH:'Maharashtra', MN:'Manipur',
+      ML:'Meghalaya', MZ:'Mizoram', NL:'Nagaland', OR:'Odisha', PB:'Punjab',
+      RJ:'Rajasthan', SK:'Sikkim', TN:'Tamil Nadu', TR:'Tripura', UP:'Uttar Pradesh',
+      UK:'Uttarakhand', WB:'West Bengal', TS:'Telangana', DL:'Delhi', JK:'Jammu & Kashmir',
+      LA:'Ladakh', AN:'Andaman & Nicobar', CH:'Chandigarh', PY:'Puducherry', LD:'Lakshadweep',
+      CT:'Chhattisgarh',
+    };
 
-      return `
-        <div id="panel-week-${i}">
-          <button onclick="togglePanelWeek(${i})"
-            class="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group">
-            <div class="flex items-center gap-3">
-              <span class="w-2 h-2 rounded-full ${isCurrent ? 'bg-emerald-400' : 'bg-gray-300'} shrink-0"></span>
-              <span class="text-[13px] font-semibold text-gray-900">${w.week}</span>
-              ${badge}
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="text-[11px] font-semibold px-2.5 py-1 rounded-full border
-                ${isCurrent ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-600 border-gray-200'}">
-                ${w.count} records
-              </span>
-              <span class="material-symbols-outlined text-gray-300 group-hover:text-gray-500 panel-week-chevron-${i} transition-transform"
-                style="font-size:16px;">${i === 0 ? 'expand_less' : 'expand_more'}</span>
-            </div>
-          </button>
-          <div id="panel-week-body-${i}" class="${i === 0 ? '' : 'hidden'} border-t border-gray-100">
-            <table class="w-full">
-              <thead>
-                <tr class="bg-gray-50 border-b border-gray-100">
-                  <th class="px-5 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Election Key</th>
-                  <th class="px-5 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Date Pushed</th>
-                  <th class="px-5 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
+    const sortedStates = Object.keys(stateMap).sort();
+    const maxPerWeek = Math.max(...sortedStates.map(s =>
+      Math.max(...weekLabels.map(w => stateMap[s].byWeek[w] || 0))
+    ), 1);
+
+    // ── Table header ──────────────────────────────────────────────────────────
+    const weekShort = wl => {
+      const start = wl.slice(5, 10); // MM-DD
+      return start;
+    };
+
+    accordion.innerHTML = `
+      <!-- Table header -->
+      <div class="grid items-center bg-gray-50 border-b border-gray-200 px-5 py-2.5"
+           style="grid-template-columns: 56px 1fr 220px auto;">
+        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">State</p>
+        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Completed Elections</p>
+        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider text-center">4-Week Trend</p>
+        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider text-right">Total</p>
+      </div>
+      <!-- Rows -->
+      ${sortedStates.map(st => {
+        const d = stateMap[st];
+        // Group elections: deduplicate by type+year, sort by year desc
+        const seen = new Set();
+        const elections = d.elections.filter(e => {
+          const k = e.type + '-' + e.year;
+          if (seen.has(k)) return false;
+          seen.add(k); return true;
+        }).sort((a, b) => (b.year || '').localeCompare(a.year || ''));
+
+        // Year tags grouped by type
+        const byType = {};
+        elections.forEach(e => {
+          if (!byType[e.type]) byType[e.type] = [];
+          byType[e.type].push(e.year);
+        });
+
+        const tags = Object.entries(byType).map(([ty, yrs]) => {
+          const typeColor = {
+            AE: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+            GE: 'bg-blue-50 text-blue-700 border-blue-100',
+            'AE-BP': 'bg-violet-50 text-violet-700 border-violet-100',
+            'GE-BP': 'bg-sky-50 text-sky-700 border-sky-100',
+          }[ty] || 'bg-gray-50 text-gray-600 border-gray-200';
+          return `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-md border ${typeColor}">
+            <span class="font-bold">${ty}</span> <span class="text-[10px] font-normal">${yrs.join(', ')}</span>
+          </span>`;
+        }).join('');
+
+        // Mini sparkbar (4 weeks, oldest left → newest right)
+        const bars = weekLabels.map(wl => {
+          const cnt = d.byWeek[wl] || 0;
+          const h = cnt > 0 ? Math.max(20, Math.round((cnt / maxPerWeek) * 100)) : 4;
+          const col = cnt > 0 ? '#6366f1' : '#e5e7eb';
+          return `<div class="flex flex-col items-center gap-1" title="${weekShort(wl)}: ${cnt}">
+            <span class="text-[8px] text-gray-400 tabular-nums">${cnt > 0 ? cnt : ''}</span>
+            <div class="w-5 rounded-sm" style="height:${h}%;background:${col};min-height:3px;max-height:32px;"></div>
+            <span class="text-[8px] text-gray-300">${weekShort(wl)}</span>
+          </div>`;
+        }).join('');
+
+        const total = d.elections.length;
+        const fullName = stateNames[st] || st;
+
+        return `
+        <div class="grid items-center px-5 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors"
+             style="grid-template-columns: 56px 1fr 220px auto;">
+          <!-- State -->
+          <div>
+            <span class="text-[12px] font-bold text-gray-900">${st}</span>
+            <p class="text-[9.5px] text-gray-400 leading-none mt-0.5">${fullName}</p>
+          </div>
+          <!-- Election tags -->
+          <div class="flex flex-wrap gap-1.5 pr-4">${tags}</div>
+          <!-- Sparkbars -->
+          <div class="flex items-end justify-center gap-1.5 h-[48px] px-2">${bars}</div>
+          <!-- Total -->
+          <div class="text-right">
+            <span class="text-[14px] font-bold text-gray-700 tabular-nums">${total}</span>
+            <p class="text-[9.5px] text-gray-400">done</p>
           </div>
         </div>`;
-    }).join('');
+      }).join('')}
+    `;
 
   } catch (e) { console.error('loadGlancePanel:', e); }
 }
@@ -1205,15 +1618,15 @@ function renderGlanceAnalytics(glance, allWeeks) {
   allRecs.forEach(r => {
     const parts = String(r.key).split('-');
     const st = parts[0] || '?';
-    const ty = parts[1] || '?';
+    const ty = parts.length >= 3 ? parts.slice(1, -1).join('-') : (parts[1] || '?');
     stateCounts[st] = (stateCounts[st] || 0) + 1;
     typeCounts[ty]  = (typeCounts[ty]  || 0) + 1;
   });
 
-  // Weekly series (ascending by start date)
-  const weekly   = glance.weekly_counts || {};
-  const weekKeys = Object.keys(weekly).sort();
-  const activeWeeks = weekKeys.length;
+  // Weekly series — last 4 weeks for Glance analytics, all-time for context
+  const weekly      = glance.weekly_counts     || {};   // last 4 weeks
+  const weekKeys    = Object.keys(weekly).sort();
+  const activeWeeks = Object.keys(glance.all_weekly_counts || weekly).length; // total active weeks for avg
 
   // This week vs last week
   const curWeek = glance.current_week || '';
@@ -1346,10 +1759,4 @@ function renderGlanceAnalytics(glance, allWeeks) {
   }
 }
 
-function togglePanelWeek(i) {
-  const body    = document.getElementById('panel-week-body-' + i);
-  const chevron = document.querySelector('.panel-week-chevron-' + i);
-  if (!body) return;
-  const hidden = body.classList.toggle('hidden');
-  if (chevron) chevron.textContent = hidden ? 'expand_more' : 'expand_less';
-}
+// togglePanelWeek removed — accordion replaced with state-grouped grid

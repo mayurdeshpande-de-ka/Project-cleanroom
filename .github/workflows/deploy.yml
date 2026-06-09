@@ -1,0 +1,26 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+      - feat/analytics-redesign-retro-rds-glance-pdf
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: 13.206.145.98
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/Form20-backlog-tracker
+            git reset --hard
+            git pull origin ${{ github.ref_name }}
+            source venv/bin/activate
+            pip install -r requirements.txt
+            sudo systemctl restart form20-dashboard.service

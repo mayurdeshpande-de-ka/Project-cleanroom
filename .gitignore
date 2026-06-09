@@ -3,3 +3,10 @@ __pycache__/
 .env
 venv/
 env/
+
+# Data Files (synced from S3 instead of git)
+*.db
+*.json
+*.csv
+*.zip
+*.log
