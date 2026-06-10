@@ -17,8 +17,10 @@ load_dotenv()
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from functools import wraps
 from authlib.integrations.flask_client import OAuth
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev_secret_key_change_me_in_production')
 
 oauth = OAuth(app)
