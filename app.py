@@ -236,12 +236,6 @@ def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
         r_dict['overall_status'] = 'db_pushed'
         r_dict['db_status'] = 'in_db'
         
-    # Track in history both manual db_pushed AND auto-detected completed (AWS)
-    if history is not None and r_dict['overall_status'] in ('db_pushed', 'completed'):
-        if key not in history:
-            history[key] = datetime.now().strftime('%Y-%m-%d')
-            history['_updated'] = True
-
     return r_dict
 
 
@@ -328,15 +322,21 @@ def update_record(record_id):
     conn.commit()
     row = conn.execute('SELECT * FROM records WHERE id = ?', [record_id]).fetchone()
     conn.close()
-    
+
     r_dict = dict(row)
     live_extracted = get_live_extracted_set()
     download_report = get_download_report_dict()
     history = get_completion_history()
     r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
-    if history.pop('_updated', False):
-        save_completion_history(history)
-        
+
+    # ── Stamp completion history only on explicit manual push ────────────────
+    new_status = updates.get('overall_status', '')
+    if new_status in ('db_pushed', 'completed'):
+        key = f"{r_dict['state']}-{r_dict['el_type']}-{r_dict['el_year']}"
+        if key not in history:
+            history[key] = datetime.now().strftime('%Y-%m-%d')
+            save_completion_history(history)
+
     return jsonify(r_dict)
 
 
@@ -396,7 +396,8 @@ def get_stats():
                 'total': 0,
                 'completed': 0,
                 'extracted': 0,
-                'missing': 0
+                'missing': 0,
+                'downloaded': 0
             }
             
         state_dict[state]['total'] += 1
@@ -438,6 +439,7 @@ def get_stats():
             state_dict[state]['missing'] += 1
             type_dict[el_type_base]['missing'] += 1
         if effective_status == 'downloaded':
+            state_dict[state]['downloaded'] += 1
             type_dict[el_type_base]['downloaded'] += 1
 
     total = sum(by_status.values())
@@ -734,6 +736,9 @@ def glance_report_pdf():
         fs = all_weeks_sorted[-1]; f_start, f_end = fs, fs + timedelta(days=6); f_label = 'Latest Active Week'
     else:
         f_start, f_end = cur_start, cur_end; f_label = 'This Week'
+
+    # Records in the focus period (latest active week)
+    focus_recs = sorted([r for r in recs if f_start <= r['d'] <= f_end], key=lambda x: x['date'])
 
     state_counts = Counter(r['state'] for r in recs)
     type_counts  = Counter(r['type']  for r in recs)
@@ -1051,6 +1056,58 @@ def glance_report_pdf():
             else:
                 ax_et.text(0.5, 0.5, 'No data yet', ha='center', va='center',
                            color=MUTED, fontsize=9)
+
+            # ── F. Elections pushed this period ───────────────────────────────
+            fig1.add_artist(plt.Line2D([0.055, 0.945], [0.332, 0.332],
+                                       color=BORDER, lw=0.6))
+            period_hdr = (f'ELECTIONS PUSHED — {f_label.upper()}'
+                          f'  ({len(focus_recs)} election{"s" if len(focus_recs) != 1 else ""})')
+            fig1.text(0.055, 0.320, period_hdr, fontsize=7, fontweight='bold', color=MUTED)
+
+            ax_pw = fig1.add_axes([0.055, 0.048, 0.890, 0.260])
+            ax_pw.axis('off')
+            ax_pw.set_title(
+                f'{f_start.strftime("%d %b")} – {f_end.strftime("%d %b %Y")}',
+                fontsize=9, fontweight='bold', color=DARK, loc='left', pad=5
+            )
+
+            if focus_recs:
+                pw_rows = []
+                for r in focus_recs:
+                    sname = STATE_NAMES.get(r['state'], r['state'])
+                    d_fmt = datetime.strptime(r['date'], '%Y-%m-%d').strftime('%d %b %Y')
+                    pw_rows.append([r['state'], sname, r['type'], r['year'], d_fmt])
+
+                col_labels_pw = ['Code', 'State Name', 'Type', 'Year', 'Date Pushed']
+                col_widths_pw = [0.07, 0.31, 0.10, 0.09, 0.15]
+
+                tab_pw = ax_pw.table(
+                    cellText=pw_rows,
+                    colLabels=col_labels_pw,
+                    cellLoc='left',
+                    loc='upper center',
+                    colWidths=col_widths_pw,
+                )
+                tab_pw.auto_set_font_size(False)
+                tab_pw.set_fontsize(9)
+                tab_pw.scale(1, 1.55)
+
+                for (row, col), cell in tab_pw.get_celld().items():
+                    cell.set_edgecolor(BORDER)
+                    if row == 0:
+                        cell.set_facecolor(EMERALD)
+                        cell.set_text_props(color='white', fontweight='bold', fontsize=8.5)
+                    else:
+                        pw_r = pw_rows[row - 1]
+                        ty_col = TYPE_COL.get(pw_r[2], GRAY)
+                        cell.set_facecolor('#f0fdf4' if row % 2 == 0 else 'white')
+                        if col == 2:   # Type column — color by AE/GE
+                            cell.set_text_props(color=ty_col, fontweight='bold')
+                        if col == 0:   # State code — bold
+                            cell.set_text_props(fontweight='bold')
+            else:
+                ax_pw.text(0.5, 0.5, 'No elections pushed this period.',
+                           ha='center', va='center', fontsize=10, color=MUTED)
 
             # ── Footer ────────────────────────────────────────────────────────
             _footer_band(fig1, 'Page 1 of 2', gen_ts)

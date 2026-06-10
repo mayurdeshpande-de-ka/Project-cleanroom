@@ -50,6 +50,15 @@ const STATUS_CONFIG = {
   'db_pushed':  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400', label: 'DB Pushed' },
 };
 
+// Canonical AC counts per state (from ac_mapping; same across years/types)
+const STATE_AC_COUNTS = {
+  'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CG': 90,  'CT': 90,  'GA': 40,
+  'GJ': 182, 'HR': 90,  'HP': 68,  'JH': 81,  'KA': 224, 'KL': 140, 'MP': 230,
+  'MH': 288, 'MN': 60,  'ML': 60,  'MZ': 40,  'NL': 60,  'OR': 147, 'PB': 117,
+  'RJ': 200, 'SK': 32,  'TN': 234, 'TS': 119, 'TR': 60,  'UP': 403, 'UK': 70,
+  'WB': 294, 'DL': 70,  'PY': 30,  'JK': 90,  'LD': 1,   'AN': 1,   'CH': 1
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   loadFilters();
   loadDashboardStats();
@@ -120,6 +129,24 @@ async function loadStats() {
 
     const pctSidebar = document.getElementById('progress-pct-sidebar');
     if (pctSidebar) pctSidebar.textContent = pct + '%';
+
+    // ── AC counts per pipeline stage ─────────────────────────────────────────
+    // Sum canonical AC count × elections-in-that-stage across all states
+    if (s.by_state && s.by_state.length) {
+      let acMissing = 0, acDownloaded = 0, acExtracted = 0, acCompleted = 0;
+      for (const row of s.by_state) {
+        const ac = STATE_AC_COUNTS[row.state] || 0;
+        acMissing    += (row.missing    || 0) * ac;
+        acDownloaded += (row.downloaded || 0) * ac;
+        acExtracted  += (row.extracted  || 0) * ac;
+        acCompleted  += (row.completed  || 0) * ac;
+      }
+      const fmtAC = n => n > 0 ? `${n.toLocaleString()} ACs` : '';
+      set('kpi-mi-acs', fmtAC(acMissing));
+      set('kpi-dl-acs', fmtAC(acDownloaded));
+      set('kpi-ex-acs', fmtAC(acExtracted));
+      set('kpi-co-acs', fmtAC(acCompleted));
+    }
   } catch (e) { console.error('loadStats:', e); }
 }
 
@@ -200,6 +227,10 @@ function renderTable() {
         missing    > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-gray-100 text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full">${missing} Mis</span>` : '',
       ].filter(Boolean).join('');
 
+      const stateCode = records[0]?.state;
+      const canonicalAC = STATE_AC_COUNTS[stateCode] || 0;
+      const totalStateACs = canonicalAC > 0 ? (records.length * canonicalAC).toLocaleString() : '';
+
       html += `
         <tr class="trow bg-white border-b border-gray-50 cursor-pointer transition-colors"
             onclick="openStateDetail('${s.replace(/'/g, "\\'")}')">
@@ -217,6 +248,7 @@ function renderTable() {
           <td class="px-5 py-3">
             <span class="text-[13px] font-semibold text-gray-700 tabular-nums">${records.length}</span>
             <span class="text-[11px] text-gray-400 ml-1">elections</span>
+            ${totalStateACs ? `<span class="text-[11px] text-gray-400 ml-1">(${totalStateACs} ACs)</span>` : ''}
           </td>
           <td class="px-5 py-3">
             <div class="flex items-center gap-1.5 flex-wrap">${chips || '<span class="text-[11px] text-gray-300">—</span>'}</div>
@@ -1404,13 +1436,7 @@ function populateForm20Card(d) {
   // ── Top states from Form 20 ───────────────────────────────────────────────
   const stateWrap = document.getElementById('f20-state-rows');
   if (stateWrap && d.top_states && d.top_states.length > 0) {
-    const STATE_AC_COUNTS = {
-      'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CG': 90,  'CT': 90,  'GA': 40,
-      'GJ': 182, 'HR': 90,  'HP': 68,  'JH': 81,  'KA': 224, 'KL': 140, 'MP': 230,
-      'MH': 288, 'MN': 60,  'ML': 60,  'MZ': 40,  'NL': 60,  'OR': 147, 'PB': 117,
-      'RJ': 200, 'SK': 32,  'TN': 234, 'TS': 119, 'TR': 60,  'UP': 403, 'UK': 70,
-      'WB': 294, 'DL': 70,  'PY': 30,  'JK': 90,  'LD': 1,   'AN': 1,   'CH': 1
-    };
+    // (STATE_AC_COUNTS is defined at module level)
     const max = d.top_states[0]?.count || 1;
     stateWrap.className = 'grid grid-cols-4 gap-1.5';
     stateWrap.innerHTML = d.top_states.map(s => {
@@ -1418,7 +1444,7 @@ function populateForm20Card(d) {
       const bg = intensity >= 8 ? 'bg-gray-100 border-gray-300' :
                  intensity >= 5 ? 'bg-gray-50 border-gray-200' : 'bg-gray-50 border-gray-100';
       const tc = intensity >= 8 ? 'text-gray-800' : 'text-gray-600';
-      const acCount = STATE_AC_COUNTS[s.state] ? `(${STATE_AC_COUNTS[s.state]})` : '';
+      const acCount = STATE_AC_COUNTS[s.state] ? `(${(s.count * STATE_AC_COUNTS[s.state]).toLocaleString()})` : '';
       return `
         <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5">
           <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
@@ -1755,6 +1781,82 @@ function renderGlanceAnalytics(glance, allWeeks) {
             </div>
           </div>`;
       }).join('');
+    }
+  }
+
+  // ── This Period's Pushes ────────────────────────────────────────────────
+  const focusWrap    = document.getElementById('glance-focus-recs');
+  const focusCountEl = document.getElementById('glance-focus-count');
+  const focusLabelEl = document.getElementById('glance-focus-period-label');
+  if (focusWrap) {
+    // Focus = current week if it has pushes, else the most recent non-empty week
+    const curWeek   = allWeeks[0];
+    const focusWeek = (curWeek && curWeek.count > 0)
+      ? curWeek
+      : (allWeeks.find(w => w.count > 0) || null);
+
+    if (!focusWeek || focusWeek.count === 0) {
+      focusWrap.innerHTML = `<div class="p-6 text-center text-gray-400 text-[12px]">No elections pushed recently.</div>`;
+      if (focusCountEl) focusCountEl.textContent = '0 elections';
+      if (focusLabelEl) focusLabelEl.textContent = 'No recent activity';
+    } else {
+      const isThisWeek = focusWeek === curWeek;
+      const fmtD = iso => {
+        const [y, m, d] = iso.split('-');
+        return `${parseInt(d)} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1]} ${y}`;
+      };
+      const wStart  = focusWeek.week.slice(0, 10);
+      const wEnd    = focusWeek.week.slice(14, 24);
+      const periodLabel = `${isThisWeek ? 'This week' : 'Last week'} · ${fmtD(wStart)} – ${fmtD(wEnd)}`;
+      if (focusLabelEl) focusLabelEl.textContent = periodLabel;
+      if (focusCountEl) focusCountEl.textContent = `${focusWeek.count} election${focusWeek.count !== 1 ? 's' : ''}`;
+
+      const snMap = {
+        AP:'Andhra Pradesh', AR:'Arunachal Pradesh', AS:'Assam', BR:'Bihar',
+        CG:'Chhattisgarh', CT:'Chhattisgarh', GA:'Goa', GJ:'Gujarat', HR:'Haryana',
+        HP:'Himachal Pradesh', JH:'Jharkhand', KA:'Karnataka', KL:'Kerala',
+        MP:'Madhya Pradesh', MH:'Maharashtra', MN:'Manipur', ML:'Meghalaya',
+        MZ:'Mizoram', NL:'Nagaland', OR:'Odisha', PB:'Punjab', RJ:'Rajasthan',
+        SK:'Sikkim', TN:'Tamil Nadu', TR:'Tripura', UP:'Uttar Pradesh',
+        UK:'Uttarakhand', WB:'West Bengal', TS:'Telangana', DL:'Delhi',
+        JK:'Jammu & Kashmir', LA:'Ladakh', AN:'Andaman & Nicobar',
+        CH:'Chandigarh', PY:'Puducherry', LD:'Lakshadweep',
+      };
+      const tyColors = {
+        AE: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+        GE: 'bg-blue-50  text-blue-700  border-blue-100',
+      };
+
+      const focusRows = [...focusWeek.records].sort((a, b) => a.date.localeCompare(b.date));
+
+      focusWrap.innerHTML = `
+        <div class="grid bg-gray-50 border-b border-gray-100 px-5 py-2"
+             style="grid-template-columns:52px 1fr 72px 64px 110px;">
+          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Code</p>
+          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">State</p>
+          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Type</p>
+          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Year</p>
+          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Date Pushed</p>
+        </div>
+        ${focusRows.map((r, i) => {
+          const parts  = String(r.key).split('-');
+          const st     = parts[0] || '?';
+          const yr     = parts[parts.length - 1] || '';
+          const ty     = parts.length >= 3 ? parts.slice(1, -1).join('-') : '';
+          const fname  = snMap[st] || st;
+          const tyClass = tyColors[ty] || 'bg-gray-50 text-gray-700 border-gray-200';
+          const rowBg  = i % 2 === 1 ? 'bg-gray-50/60' : '';
+          return `
+            <div class="grid items-center px-5 py-2.5 border-b border-gray-50 hover:bg-emerald-50/40 transition-colors ${rowBg}"
+                 style="grid-template-columns:52px 1fr 72px 64px 110px;">
+              <span class="text-[12.5px] font-bold text-gray-900">${st}</span>
+              <span class="text-[12px] text-gray-700">${fname}</span>
+              <span class="inline-flex items-center text-[10.5px] font-bold px-2 py-0.5 rounded border ${tyClass} w-fit">${ty}</span>
+              <span class="text-[12px] font-semibold text-gray-800 tabular-nums">${yr}</span>
+              <span class="text-[11px] text-emerald-600 font-medium tabular-nums">${fmtD(r.date)}</span>
+            </div>`;
+        }).join('')}
+      `;
     }
   }
 }
