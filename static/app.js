@@ -1091,7 +1091,7 @@ function updateForm20WithMapping(mappingYears, mappingEntries, form20Total, mapp
           <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div class="h-full rounded-full ${m.bg} bar-fill" style="width:${p}%"></div>
           </div>
-          <div class="flex items-center gap-1 shrink-0 w-[72px] justify-end">
+          <div class="flex items-center gap-1.5 shrink-0 justify-end whitespace-nowrap">
             <span class="text-[11px] font-bold tabular-nums ${pctColor}">${p}%</span>
             <span class="text-[9.5px] text-gray-400 tabular-nums">${done}/${mappingTotal}</span>
           </div>
@@ -1158,7 +1158,7 @@ function renderRetroPanel(r) {
           <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div class="h-full rounded-full ${m.bg} bar-fill" style="width:${Math.min(p, 100)}%"></div>
           </div>
-          <div class="flex items-center gap-1 shrink-0 w-[72px] justify-end">
+          <div class="flex items-center gap-1.5 shrink-0 justify-end whitespace-nowrap">
             <span class="text-[11px] font-bold tabular-nums ${pctColor}">${p}%</span>
             <span class="text-[9.5px] text-gray-400 tabular-nums">${fmtNum(t.available)}/${fmtNum(t.total)}</span>
           </div>
