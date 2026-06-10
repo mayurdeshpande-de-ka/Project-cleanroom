@@ -4,4 +4,6 @@ gunicorn>=21.2.0
 libsql-client
 psycopg2-binary
 python-dotenv
+authlib
+requests
 

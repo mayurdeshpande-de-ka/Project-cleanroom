@@ -213,12 +213,30 @@
     </div>
   </div>
 
-  <!-- Right: Global Search -->
-  <div class="flex items-center gap-2">
+  <!-- Right: Global Search & Profile -->
+  <div class="flex items-center gap-4">
     <div class="relative hidden sm:block">
       <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" style="font-size:14px;">search</span>
       <input id="global-search" type="text" placeholder="Search records…"
         class="h-8 w-56 bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 text-[12.5px] text-gray-700 placeholder-gray-400 outline-none focus:border-gray-400 focus:bg-white transition-all"/>
+    </div>
+    <div class="h-4 w-px bg-gray-200 hidden sm:block"></div>
+    <div class="flex items-center gap-3 pr-1">
+      <div class="flex items-center gap-2">
+        {% if user and user.picture %}
+          <img src="{{ user.picture }}" alt="Profile" class="w-6 h-6 rounded-full border border-gray-200">
+        {% else %}
+          <div class="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center border border-indigo-200">
+            <span class="material-symbols-outlined text-indigo-500" style="font-size:14px;">person</span>
+          </div>
+        {% endif %}
+        <span class="text-[12px] font-medium text-gray-700 hidden md:block">
+          {{ user.email if user else 'Guest' }}
+        </span>
+      </div>
+      <a href="/logout" class="h-7 px-2.5 text-[11.5px] font-semibold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors flex items-center">
+        Logout
+      </a>
     </div>
   </div>
 </nav>
