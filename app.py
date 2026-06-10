@@ -106,6 +106,15 @@ STATE_TO_ECI = {
     'LD': 'U06', 'PY': 'U07', 'JK': 'U08', 'LA': 'U09'
 }
 
+# Canonical Assembly Constituency (AC) counts per state/UT — mirrors STATE_AC_COUNTS in static/app.js
+STATE_AC_COUNTS = {
+    'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CG': 90,  'CT': 90,  'GA': 40,
+    'GJ': 182, 'HR': 90,  'HP': 68,  'JH': 81,  'KA': 224, 'KL': 140, 'MP': 230,
+    'MH': 288, 'MN': 60,  'ML': 60,  'MZ': 40,  'NL': 60,  'OR': 147, 'PB': 117,
+    'RJ': 200, 'SK': 32,  'TN': 234, 'TS': 119, 'TR': 60,  'UP': 403, 'UK': 70,
+    'WB': 294, 'DL': 70,  'PY': 30,  'JK': 90,  'LD': 1,   'AN': 1,   'CH': 1,
+}
+
 # ── Live AWS Caching ────────────────────────────────────────────────────────
 
 LIVE_JSON_PATH = os.path.join(BASE_DIR, 'live_extracted.json')
@@ -292,7 +301,10 @@ def get_records():
         r_dict = dict(r)
         r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
 
-        if status and r_dict['overall_status'] != status:
+        if status == 'remaining':
+            if r_dict['overall_status'] in ('db_pushed', 'completed'):
+                continue
+        elif status and r_dict['overall_status'] != status:
             continue
 
         filtered_rows.append(r_dict)
@@ -1608,6 +1620,18 @@ def form20_card_stats():
     state_counts = Counter(state for state, _, _ in form20_set)
     top_states   = [{'state': s, 'count': c} for s, c in state_counts.most_common(10)]
 
+    # ── Missing entries: in mapping (262) but not yet in Form 20 ─────────────
+    # For each missing (state, el_type, el_year), credit the canonical AC count
+    # of that state — gives the total AC coverage still pending across the
+    # 262 mapping entries.
+    missing_set     = acpc_set - form20_set
+    missing_acs     = sum(STATE_AC_COUNTS.get(state, 0) for state, _, _ in missing_set)
+    missing_by_state = Counter(state for state, _, _ in missing_set)
+    missing_states   = [
+        {'state': s, 'count': c, 'acs': c * STATE_AC_COUNTS.get(s, 0)}
+        for s, c in missing_by_state.most_common()
+    ]
+
     return jsonify({
         'form20_entries':   form20_count,
         'acpc_entries':     acpc_count,
@@ -1617,6 +1641,8 @@ def form20_card_stats():
         'by_type':          by_type,
         'top_states':       top_states,
         'remaining':        acpc_count - form20_count,
+        'missing_acs':      missing_acs,
+        'missing_states':   missing_states,
     })
 
 

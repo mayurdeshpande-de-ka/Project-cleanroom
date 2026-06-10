@@ -30,6 +30,7 @@ let dashSirOnly  = false;
 let dashWeekFilter = '';   // week start date string e.g. "2026-06-01"
 
 let monthlyChart    = null;
+let _missingACsTotal = 0;  // total ACs across the 262 mapping entries not yet in Form 20
 let _f20TotalYears  = 0;   // form20 distinct years (from SQLite stats)
 let _f20Total       = 0;   // form20 total election entries (from SQLite stats)
 let _f20ByType      = {};  // form20 by_type from SQLite stats (completed/total per type)
@@ -115,9 +116,10 @@ async function loadStats() {
 
     const completed = (bs.db_pushed || 0) + (bs.completed || 0);
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const totalRemaining = total - completed;
 
     // Listing pipeline strip
-    set('kpi-co-count', completed);
+    set('kpi-tr-count', totalRemaining);
     const listPctEl  = document.getElementById('listing-pct');
     const listProgBar = document.getElementById('listing-prog-bar');
     if (listPctEl)  listPctEl.textContent  = pct + '%';
@@ -133,21 +135,39 @@ async function loadStats() {
     // ── AC counts per pipeline stage ─────────────────────────────────────────
     // Sum canonical AC count × elections-in-that-stage across all states
     if (s.by_state && s.by_state.length) {
-      let acMissing = 0, acDownloaded = 0, acExtracted = 0, acCompleted = 0;
+      let acMissing = 0, acDownloaded = 0, acExtracted = 0;
       for (const row of s.by_state) {
         const ac = STATE_AC_COUNTS[row.state] || 0;
         acMissing    += (row.missing    || 0) * ac;
         acDownloaded += (row.downloaded || 0) * ac;
         acExtracted  += (row.extracted  || 0) * ac;
-        acCompleted  += (row.completed  || 0) * ac;
       }
+      const acTotalRemaining = acMissing + acDownloaded + acExtracted;
       const fmtAC = n => n > 0 ? `${n.toLocaleString()} ACs` : '';
+      set('kpi-tr-acs', fmtAC(acTotalRemaining));
       set('kpi-mi-acs', fmtAC(acMissing));
       set('kpi-dl-acs', fmtAC(acDownloaded));
       set('kpi-ex-acs', fmtAC(acExtracted));
-      set('kpi-co-acs', fmtAC(acCompleted));
     }
   } catch (e) { console.error('loadStats:', e); }
+
+  // ── Missing ACs across the 262 mapping entries not yet in Form 20 ─────────
+  try {
+    const f20 = await apiFetch('/api/form20_card_stats');
+    _missingACsTotal = f20.missing_acs || 0;
+    updateRecordBadge();
+  } catch (e) { console.warn('form20_card_stats (badge) unavailable:', e); }
+}
+
+// Updates the "N records" badge on the Listing page header, appending the
+// total AC count still missing across the 262 mapping entries.
+function updateRecordBadge() {
+  const badge = document.getElementById('record-count-badge');
+  if (!badge) return;
+  const count = allRecords.length;
+  let text = `${count} records`;
+  if (_missingACsTotal > 0) text += ` · ${_missingACsTotal.toLocaleString()} ACs missing`;
+  badge.textContent = text;
 }
 
 async function loadRecords() {
@@ -173,7 +193,7 @@ async function loadRecords() {
 function renderTable() {
   const tbody = document.getElementById('table-body');
   const thead = document.getElementById('table-head');
-  document.getElementById('record-count-badge').textContent = `${allRecords.length} records`;
+  updateRecordBadge();
 
   if (!allRecords.length) {
     tbody.innerHTML = `
@@ -503,12 +523,12 @@ window.handleKpiClick = function (status) {
 function setActiveKpi(status) {
   activeKpi = status;
   const kpiMap = {
-    downloaded: { id: 'kpi-downloaded', cls: 'kpi-active-blue'    },
-    extracted:  { id: 'kpi-extracted',  cls: 'kpi-active-violet'  },
-    missing:    { id: 'kpi-missing',    cls: 'kpi-active-red'      },
-    db_pushed:  { id: 'kpi-db-pushed',  cls: 'kpi-active-emerald' },
+    remaining:  { id: 'kpi-total-remaining', cls: 'kpi-active-slate'   },
+    downloaded: { id: 'kpi-downloaded',      cls: 'kpi-active-blue'    },
+    extracted:  { id: 'kpi-extracted',       cls: 'kpi-active-violet'  },
+    missing:    { id: 'kpi-missing',         cls: 'kpi-active-red'     },
   };
-  const allCls = ['kpi-active-blue', 'kpi-active-violet', 'kpi-active-red', 'kpi-active-emerald'];
+  const allCls = ['kpi-active-blue', 'kpi-active-violet', 'kpi-active-red', 'kpi-active-emerald', 'kpi-active-slate'];
   Object.entries(kpiMap).forEach(([s, cfg]) => {
     const btn = document.getElementById(cfg.id);
     if (!btn) return;
@@ -748,6 +768,19 @@ function bindEvents() {
         nav.classList.remove('active');
       }
     });
+
+    // Pipeline Stages sidebar: only shown on the Listing page
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('main-content');
+    if (sidebar && mainContent) {
+      if (activeId === 'nav-listing') {
+        sidebar.classList.remove('hidden'); sidebar.classList.add('flex');
+        mainContent.classList.add('ml-[216px]');
+      } else {
+        sidebar.classList.add('hidden'); sidebar.classList.remove('flex');
+        mainContent.classList.remove('ml-[216px]');
+      }
+    }
   }
 
   navTabs.forEach(t => {
@@ -971,8 +1004,6 @@ function renderForm20Panel(stats) {
   setEl('f20-pct',        pct + '%');
   setEl('f20-pct-badge',  pct + '% complete');
   setEl('f20-counts',     `${completed.toLocaleString()} / ${total.toLocaleString()} elections in DB`);
-  setEl('f20-total-years', '—');          // overwritten by mapping when analytics loads
-  setEl('f20-years-in-db', stats.total_years ?? '—');
   const progEl = document.getElementById('f20-prog');
   if (progEl) progEl.style.width = pct + '%';
 
@@ -1049,11 +1080,6 @@ function updateForm20WithMapping(mappingYears, mappingEntries, form20Total, mapp
     setEl('f20-pct-badge', pct + '% coverage');
     setEl('f20-counts',    `${form20Total.toLocaleString()} / ${mappingEntries.toLocaleString()} elections in Form 20`);
   }
-
-  // ── Year + entry strip ──
-  if (mappingYears)   setEl('f20-total-years',     mappingYears);
-  if (_f20TotalYears) setEl('f20-years-in-db',     _f20TotalYears);
-  if (mappingEntries) setEl('f20-mapping-entries', mappingEntries);
 
   // ── By Election Type: re-render with 262 mapping totals as denominator ──
   // Numerator = pipeline-completed elections (from SQLite _f20ByType)
@@ -1382,13 +1408,6 @@ function populateForm20Card(d) {
   setEl('f20-pct-label', 'coverage');
   setEl('f20-pct-badge', pct + '% complete');
   setEl('f20-counts',    `${form20.toLocaleString()} / ${acpc.toLocaleString()} elections in Form 20`);
-
-  // Year strip
-  const yearsInForm20  = (d.years_in_form20  || []).length;
-  const yearsInMapping = (d.years_in_mapping || []).length;
-  setEl('f20-total-years',     yearsInMapping);  // MAPPING column
-  setEl('f20-years-in-db',     yearsInForm20);   // IN FORM 20 column
-  setEl('f20-mapping-entries', acpc);            // MAPPING ENTRIES column
 
   // Update globals so updateForm20WithMapping (from RDS analytics) uses correct numerator/denominator
   _f20Total = form20;
@@ -1784,81 +1803,70 @@ function renderGlanceAnalytics(glance, allWeeks) {
     }
   }
 
-  // ── This Period's Pushes ────────────────────────────────────────────────
-  const focusWrap    = document.getElementById('glance-focus-recs');
-  const focusCountEl = document.getElementById('glance-focus-count');
-  const focusLabelEl = document.getElementById('glance-focus-period-label');
-  if (focusWrap) {
-    // Focus = current week if it has pushes, else the most recent non-empty week
-    const curWeek   = allWeeks[0];
-    const focusWeek = (curWeek && curWeek.count > 0)
-      ? curWeek
-      : (allWeeks.find(w => w.count > 0) || null);
+  // ── Election years: last week vs this week ──────────────────────────────
+  renderYearComparison(allWeeks);
+}
 
-    if (!focusWeek || focusWeek.count === 0) {
-      focusWrap.innerHTML = `<div class="p-6 text-center text-gray-400 text-[12px]">No elections pushed recently.</div>`;
-      if (focusCountEl) focusCountEl.textContent = '0 elections';
-      if (focusLabelEl) focusLabelEl.textContent = 'No recent activity';
-    } else {
-      const isThisWeek = focusWeek === curWeek;
-      const fmtD = iso => {
-        const [y, m, d] = iso.split('-');
-        return `${parseInt(d)} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1]} ${y}`;
-      };
-      const wStart  = focusWeek.week.slice(0, 10);
-      const wEnd    = focusWeek.week.slice(14, 24);
-      const periodLabel = `${isThisWeek ? 'This week' : 'Last week'} · ${fmtD(wStart)} – ${fmtD(wEnd)}`;
-      if (focusLabelEl) focusLabelEl.textContent = periodLabel;
-      if (focusCountEl) focusCountEl.textContent = `${focusWeek.count} election${focusWeek.count !== 1 ? 's' : ''}`;
+// Compares the set of election years pushed last week vs this week.
+// allWeeks[0] is the current calendar week (live), allWeeks[1] is last week.
+function renderYearComparison(allWeeks) {
+  const wrap = document.getElementById('glance-year-compare');
+  if (!wrap) return;
 
-      const snMap = {
-        AP:'Andhra Pradesh', AR:'Arunachal Pradesh', AS:'Assam', BR:'Bihar',
-        CG:'Chhattisgarh', CT:'Chhattisgarh', GA:'Goa', GJ:'Gujarat', HR:'Haryana',
-        HP:'Himachal Pradesh', JH:'Jharkhand', KA:'Karnataka', KL:'Kerala',
-        MP:'Madhya Pradesh', MH:'Maharashtra', MN:'Manipur', ML:'Meghalaya',
-        MZ:'Mizoram', NL:'Nagaland', OR:'Odisha', PB:'Punjab', RJ:'Rajasthan',
-        SK:'Sikkim', TN:'Tamil Nadu', TR:'Tripura', UP:'Uttar Pradesh',
-        UK:'Uttarakhand', WB:'West Bengal', TS:'Telangana', DL:'Delhi',
-        JK:'Jammu & Kashmir', LA:'Ladakh', AN:'Andaman & Nicobar',
-        CH:'Chandigarh', PY:'Puducherry', LD:'Lakshadweep',
-      };
-      const tyColors = {
-        AE: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-        GE: 'bg-blue-50  text-blue-700  border-blue-100',
-      };
+  const thisWeek = (allWeeks && allWeeks[0]) || { week: '', records: [] };
+  const lastWeek = (allWeeks && allWeeks[1]) || { week: '', records: [] };
 
-      const focusRows = [...focusWeek.records].sort((a, b) => a.date.localeCompare(b.date));
-
-      focusWrap.innerHTML = `
-        <div class="grid bg-gray-50 border-b border-gray-100 px-5 py-2"
-             style="grid-template-columns:52px 1fr 72px 64px 110px;">
-          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Code</p>
-          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">State</p>
-          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Type</p>
-          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Year</p>
-          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Date Pushed</p>
-        </div>
-        ${focusRows.map((r, i) => {
-          const parts  = String(r.key).split('-');
-          const st     = parts[0] || '?';
-          const yr     = parts[parts.length - 1] || '';
-          const ty     = parts.length >= 3 ? parts.slice(1, -1).join('-') : '';
-          const fname  = snMap[st] || st;
-          const tyClass = tyColors[ty] || 'bg-gray-50 text-gray-700 border-gray-200';
-          const rowBg  = i % 2 === 1 ? 'bg-gray-50/60' : '';
-          return `
-            <div class="grid items-center px-5 py-2.5 border-b border-gray-50 hover:bg-emerald-50/40 transition-colors ${rowBg}"
-                 style="grid-template-columns:52px 1fr 72px 64px 110px;">
-              <span class="text-[12.5px] font-bold text-gray-900">${st}</span>
-              <span class="text-[12px] text-gray-700">${fname}</span>
-              <span class="inline-flex items-center text-[10.5px] font-bold px-2 py-0.5 rounded border ${tyClass} w-fit">${ty}</span>
-              <span class="text-[12px] font-semibold text-gray-800 tabular-nums">${yr}</span>
-              <span class="text-[11px] text-emerald-600 font-medium tabular-nums">${fmtD(r.date)}</span>
-            </div>`;
-        }).join('')}
-      `;
-    }
+  const fmtRange = wl => {
+    if (!wl || wl.length < 24) return '—';
+    const s = wl.slice(0, 10), e = wl.slice(14, 24);
+    const fmt = iso => {
+      const [y, m, d] = iso.split('-');
+      return `${parseInt(d)} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1]}`;
+    };
+    return `${fmt(s)} – ${fmt(e)} ${e.slice(0, 4)}`;
+  };
+  const rangeEl = document.getElementById('glance-year-compare-range');
+  if (rangeEl) {
+    rangeEl.textContent = `This week: ${fmtRange(thisWeek.week)}  |  Last week: ${fmtRange(lastWeek.week)}`;
   }
+
+  const yearSet = recs => {
+    const s = new Set();
+    (recs || []).forEach(r => {
+      const parts = String(r.key).split('-');
+      const yr = parts[parts.length - 1];
+      if (yr) s.add(yr);
+    });
+    return s;
+  };
+
+  const thisYears = yearSet(thisWeek.records);
+  const lastYears = yearSet(lastWeek.records);
+
+  const onlyLast = [...lastYears].filter(y => !thisYears.has(y)).sort();
+  const both     = [...thisYears].filter(y => lastYears.has(y)).sort();
+  const onlyThis = [...thisYears].filter(y => !lastYears.has(y)).sort();
+
+  const renderChips = (years, emptyText, color) => {
+    if (!years.length) return `<span class="text-[11px] text-gray-300">${emptyText}</span>`;
+    return years.map(y => `<span class="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded border ${color}">${y}</span>`).join(' ');
+  };
+
+  const col = (title, icon, iconColor, years, emptyText, chipColor) => `
+    <div class="border border-gray-100 rounded-lg p-3">
+      <div class="flex items-center gap-1.5 mb-2">
+        <span class="material-symbols-outlined ${iconColor}" style="font-size:14px;">${icon}</span>
+        <p class="text-[11px] font-semibold text-gray-700">${title}</p>
+        <span class="text-[10px] text-gray-400 ml-auto tabular-nums">${years.length}</span>
+      </div>
+      <div class="flex flex-wrap gap-1">${renderChips(years, emptyText, chipColor)}</div>
+    </div>`;
+
+  wrap.innerHTML = [
+    col('Only Last Week',  'history',         'text-amber-500',   onlyLast, 'None', 'bg-amber-50 text-amber-700 border-amber-100'),
+    col('Both Weeks',      'sync_alt',        'text-indigo-500',  both,     'None', 'bg-indigo-50 text-indigo-700 border-indigo-100'),
+    col('Only This Week',  'fiber_new',       'text-emerald-500', onlyThis, 'None', 'bg-emerald-50 text-emerald-700 border-emerald-100'),
+  ].join('');
 }
 
 // togglePanelWeek removed — accordion replaced with state-grouped grid
