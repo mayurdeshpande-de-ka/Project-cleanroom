@@ -334,7 +334,7 @@ def login():
 @app.route('/auth/callback')
 def auth_callback():
     token = google.authorize_access_token()
-    user_info = google.get('userinfo').json()
+    user_info = token.get('userinfo')
     # Optional: You can enforce allowed domains/emails here
     session['user'] = user_info
     return redirect(url_for('index'))
