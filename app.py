@@ -94,6 +94,47 @@ def get_rds_db():
     conn.autocommit = True
     return conn
 
+# ── On-demand RDS cache: refresh on reload, NOT by background polling ─────────
+# Dashboard data is served from cache (memory → disk) for an instant response.
+# A reload only touches RDS when the cached copy is older than CACHE_TTL_SECONDS,
+# and even then the refresh runs once in the background (single-flight) so the
+# request never blocks and concurrent reloads collapse into a single DB hit.
+# If nobody opens the dashboard, RDS is never queried — load tracks real usage.
+CACHE_TTL_SECONDS = 300   # 5 min — serve cache without hitting RDS within this window
+
+_cache_meta_lock   = threading.Lock()
+_last_refresh_ts   = {}    # name -> epoch seconds of last successful refresh
+_refresh_in_flight = set() # names whose background refresh is currently running
+
+
+def cache_is_fresh(name):
+    """True if `name` was refreshed within the TTL (no DB hit needed)."""
+    return (time.time() - _last_refresh_ts.get(name, 0)) < CACHE_TTL_SECONDS
+
+
+def trigger_refresh(name, builder):
+    """Stale-while-revalidate, single-flight. If `name`'s cache is stale and no
+    refresh is already running, execute `builder()` once in a daemon thread.
+    Returns immediately — the request is always served from the existing cache."""
+    with _cache_meta_lock:
+        if cache_is_fresh(name) or name in _refresh_in_flight:
+            return
+        _refresh_in_flight.add(name)
+
+    def _run():
+        try:
+            builder()
+            with _cache_meta_lock:
+                _last_refresh_ts[name] = time.time()
+        except Exception as e:
+            print(f'[cache:{name}] refresh failed: {e}')
+        finally:
+            with _cache_meta_lock:
+                _refresh_in_flight.discard(name)
+
+    threading.Thread(target=_run, daemon=True, name=f'refresh-{name}').start()
+
+
 # Standard ECI state codes mapping
 STATE_TO_ECI = {
     'AP': 'S01', 'AR': 'S02', 'AS': 'S03', 'BR': 'S04', 'GA': 'S05',
@@ -179,13 +220,11 @@ def fetch_live_json_sync():
     finally:
         rds_conn.close()
 
-def update_live_extracted_json():
-    while True:
-        fetch_live_json_sync()
-        time.sleep(60) # sync every 60 seconds
-
-bg_thread = threading.Thread(target=update_live_extracted_json, daemon=True)
-bg_thread.start()
+def _build_live():
+    """Refresh the Form 20 / AC-PC JSON snapshots and sync any newly-discovered
+    elections into the operational DB. Triggered on dashboard/listing reload via
+    trigger_refresh('live', ...) — no longer polled every 60s."""
+    fetch_live_json_sync()
 
 def get_live_extracted_set():
     if not os.path.exists(LIVE_JSON_PATH):
@@ -257,6 +296,7 @@ def index():
 
 @app.route('/api/records', methods=['GET'])
 def get_records():
+    trigger_refresh('live', _build_live)   # refresh RDS snapshot on reload (if stale)
     conn = get_db()
     query = 'SELECT * FROM records WHERE 1=1'
     params = []
@@ -1366,53 +1406,12 @@ def build_analytics_cache():
         ''')
         result['mapping_by_type'] = {r[0]: int(r[1]) for r in (rows_mt or [])} if not err_mt else {}
 
-        # ── 2. Booth metadata ─────────────────────────────────────────────────
-        rows, err = _rds_query(cur, '''
-            SELECT COUNT(DISTINCT state_abb), COUNT(DISTINCT (state_abb,ac_no)),
-                   COUNT(*), SUM(total_voters) FROM booth_metadata
-        ''')
-        if rows and not err:
-            states, acs, booths, voters = rows[0]
-            rows2, _ = _rds_query(cur, '''
-                SELECT state_abb, COUNT(DISTINCT ac_no), COUNT(*), SUM(total_voters)
-                FROM booth_metadata GROUP BY state_abb ORDER BY 3 DESC LIMIT 10
-            ''')
-            rows3, _ = _rds_query(cur, 'SELECT COUNT(DISTINCT (state_abb,ac_no)) FROM ac_mapping')
-            total_acs = int((rows3 or [[0]])[0][0])
-            result['booth'] = {
-                'available': True,
-                'states': int(states or 0), 'acs_with_data': int(acs or 0),
-                'total_acs': total_acs, 'booths': int(booths or 0),
-                'total_voters': int(voters or 0),
-                'by_state': [{'state': r[0], 'acs': int(r[1]), 'booths': int(r[2]), 'voters': int(r[3] or 0)} for r in (rows2 or [])],
-            }
-        else:
-            result['booth'] = {'available': False, 'error': err}
-
-        # ── 3. Voter roll ─────────────────────────────────────────────────────
-        rows, err = _rds_query(cur, '''
-            SELECT COUNT(DISTINCT state_abb), COUNT(DISTINCT (state_abb,ac_no)),
-                   COUNT(*) FROM voter_details
-        ''')
-        if rows and not err:
-            states, acs, voters = rows[0]
-            years = 0  # vd_year column name differs in live schema
-            rows2, _ = _rds_query(cur, '''
-                SELECT state_abb, COUNT(DISTINCT ac_no), COUNT(*)
-                FROM voter_details GROUP BY state_abb ORDER BY 3 DESC LIMIT 10
-            ''')
-            rows3, _ = _rds_query(cur, '''
-                SELECT NULL, NULL, NULL WHERE FALSE  -- vd_year column name unknown
-            ''')
-            result['voter_roll'] = {
-                'available': True,
-                'states': int(states or 0), 'acs_with_data': int(acs or 0),
-                'years': int(years or 0), 'total_voters': int(voters or 0),
-                'by_state': [{'state': r[0], 'acs': int(r[1]), 'voters': int(r[2])} for r in (rows2 or [])],
-                'by_year':  [{'year': int(r[0]), 'acs': int(r[1]), 'voters': int(r[2])} for r in (rows3 or [])],
-            }
-        else:
-            result['voter_roll'] = {'available': False, 'error': err}
+        # ── 2 & 3. Booth metadata / Voter roll — SKIPPED ──────────────────────
+        # These cards were removed from the dashboard, so we no longer scan the
+        # two largest RDS tables (booth_metadata, voter_details) on every refresh.
+        # Keys are kept (available:False) so any cached/older client stays safe.
+        result['booth']      = {'available': False, 'error': 'not tracked'}
+        result['voter_roll'] = {'available': False, 'error': 'not tracked'}
 
         # ── 4. Caste details ──────────────────────────────────────────────────
         rows, err = _rds_query(cur, '''
@@ -1447,28 +1446,27 @@ def build_analytics_cache():
     return result
 
 
-def refresh_analytics_loop():
+def _build_analytics():
+    """Rebuild the dashboard analytics cache from RDS and persist it to disk.
+    Triggered on dashboard reload via trigger_refresh('analytics', ...) when the
+    cache is older than CACHE_TTL_SECONDS — no longer polled every 10 minutes."""
     global _analytics_cache
-    while True:
-        data = build_analytics_cache()
-        if data:
-            _analytics_cache = data
-            try:
-                with open(ANALYTICS_CACHE_PATH, 'w', encoding='utf-8') as f:
-                    json.dump(data, f)
-            except Exception:
-                pass
-        time.sleep(600)   # refresh every 10 minutes
-
-
-analytics_thread = threading.Thread(target=refresh_analytics_loop, daemon=True)
-analytics_thread.start()
+    data = build_analytics_cache()
+    if data:
+        _analytics_cache = data
+        try:
+            with open(ANALYTICS_CACHE_PATH, 'w', encoding='utf-8') as f:
+                json.dump(data, f)
+        except Exception:
+            pass
 
 
 @app.route('/api/dashboard/analytics')
 def dashboard_analytics():
-    """Return cached analytics — instant response, refreshed every 10 min in background."""
+    """Return cached analytics — instant response. A reload kicks a background
+    refresh only when the cache is stale (see trigger_refresh)."""
     global _analytics_cache
+    trigger_refresh('analytics', _build_analytics)   # refresh-on-reload (if stale)
     # 1. In-memory cache
     if _analytics_cache:
         return jsonify(_analytics_cache)
@@ -1563,6 +1561,7 @@ def form20_card_stats():
     - years_in_form20: distinct years present in Form 20 (non-BP)
     - years_in_mapping: distinct years present in AC-PC mapping (non-BP)
     """
+    trigger_refresh('live', _build_live)   # refresh RDS snapshot on reload (if stale)
     # ── Load form20 live data ────────────────────────────────────────────────
     form20_set = set()
     form20_list = []
@@ -1909,21 +1908,19 @@ def get_retro_metadata_dict():
     return retro_metadata_cache
 
 
-def refresh_retro_metadata_loop():
+def _build_retro():
+    """Rebuild the retro metadata cache from RDS. Triggered on retro/dashboard
+    reload via trigger_refresh('retro', ...) when the cache is stale — no longer
+    polled every 10 minutes."""
     global retro_metadata_cache
-    while True:
-        meta = fetch_retro_metadata_sync()
-        if meta is not None:
-            retro_metadata_cache = meta
-        time.sleep(600)  # refresh every 10 minutes — retro data keeps updating
-
-
-retro_meta_thread = threading.Thread(target=refresh_retro_metadata_loop, daemon=True)
-retro_meta_thread.start()
+    meta = fetch_retro_metadata_sync()
+    if meta is not None:
+        retro_metadata_cache = meta
 
 
 @app.route('/api/retro/metadata')
 def retro_metadata():
+    trigger_refresh('retro', _build_retro)   # refresh-on-reload (if stale)
     return jsonify(get_retro_metadata_dict())
 
 

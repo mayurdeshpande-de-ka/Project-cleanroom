@@ -121,6 +121,49 @@
     /* ── Card base ── */
     .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; }
 
+    /* ── Premium dashboard (hero ribbon + analytical cards) ── */
+    .hero-kpi {
+      position: relative;
+      border-radius: 14px;
+      padding: 14px 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: transform .18s cubic-bezier(.4,0,.2,1), box-shadow .18s;
+    }
+    .hero-kpi:hover { transform: translateY(-2px); box-shadow: 0 10px 28px -12px rgba(0,0,0,0.35); }
+    .hero-kpi::after {
+      content: ''; position: absolute; right: -28px; top: -28px;
+      width: 96px; height: 96px; border-radius: 50%;
+      background: rgba(255,255,255,0.10);
+    }
+    .hero-slate  { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); }
+    .hero-indigo { background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); }
+    .hero-emerald{ background: linear-gradient(135deg, #059669 0%, #047857 100%); }
+    .hero-blue   { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); }
+    .hero-amber  { background: linear-gradient(135deg, #d97706 0%, #b45309 100%); }
+
+    /* premium card hover lift */
+    .card-lift { transition: transform .18s cubic-bezier(.4,0,.2,1), box-shadow .18s, border-color .18s; }
+    .card-lift:hover { transform: translateY(-2px); box-shadow: 0 12px 30px -16px rgba(15,23,42,0.30); border-color: #d1d5db; }
+
+    /* insight banner */
+    .insight-banner {
+      background: linear-gradient(120deg, #fffbeb 0%, #fef9f3 100%);
+      border: 1px solid #fde68a;
+      border-radius: 10px;
+    }
+
+    /* tier dot legend */
+    .tier-chip { display:inline-flex; align-items:center; gap:5px; font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:99px; }
+
+    /* coverage bar track */
+    .cov-track { background: #f1f5f9; border-radius: 99px; overflow: hidden; }
+    .cov-fill  { height: 100%; border-radius: 99px; transition: width 1s cubic-bezier(.4,0,.2,1); }
+
+    /* mini sheen on fills */
+    @keyframes fadeUp { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
+    .fade-up { animation: fadeUp .4s ease both; }
+
     /* ── Input base ── */
     .sel {
       height: 28px;
@@ -418,12 +461,48 @@
         </button>
       </div>
 
-      <!-- ── Dashboard content: 2×2 analytics grid ──────────────────────── -->
+      <!-- ── Dashboard content ──────────────────────── -->
       <div class="p-5 pb-10">
+
+        <!-- ══ Executive KPI ribbon ══ -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <div class="hero-kpi hero-slate">
+            <div class="relative z-10">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="material-symbols-outlined text-white/70" style="font-size:14px;">ballot</span>
+                <p class="text-[10px] font-semibold text-white/70 uppercase tracking-wider">Pipeline</p>
+              </div>
+              <p class="text-[26px] font-black text-white leading-none tabular-nums" id="hero-pipeline">—</p>
+              <p class="text-[10.5px] text-white/60 mt-1.5 tabular-nums" id="hero-pipeline-sub">— elections</p>
+            </div>
+          </div>
+          <div class="hero-kpi hero-indigo">
+            <div class="relative z-10">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="material-symbols-outlined text-white/70" style="font-size:14px;">history_edu</span>
+                <p class="text-[10px] font-semibold text-white/70 uppercase tracking-wider">Retro Coverage</p>
+              </div>
+              <p class="text-[26px] font-black text-white leading-none tabular-nums" id="hero-retro">—</p>
+              <p class="text-[10.5px] text-white/60 mt-1.5 tabular-nums" id="hero-retro-sub">— ACs in DB</p>
+            </div>
+          </div>
+          <div class="hero-kpi hero-amber">
+            <div class="relative z-10">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="material-symbols-outlined text-white/70" style="font-size:14px;">diversity_3</span>
+                <p class="text-[10px] font-semibold text-white/70 uppercase tracking-wider">Caste Records</p>
+              </div>
+              <p class="text-[26px] font-black text-white leading-none tabular-nums" id="hero-caste">—</p>
+              <p class="text-[10.5px] text-white/60 mt-1.5 tabular-nums" id="hero-caste-sub">— categories</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ analytics grid ══ -->
         <div class="grid grid-cols-2 gap-4" id="analytics-panels">
 
           <!-- ── Form 20 ──────────────────────────────────────────────── -->
-          <div class="card overflow-hidden flex flex-col" id="panel-form20">
+          <div class="card card-lift overflow-hidden flex flex-col" id="panel-form20">
             <div class="px-4 pt-4 pb-3 flex items-center justify-between border-b border-gray-50">
               <div class="flex items-center gap-2">
                 <div class="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
@@ -474,7 +553,7 @@
           </div>
 
           <!-- ── Retro ────────────────────────────────────────────────── -->
-          <div class="card overflow-hidden flex flex-col" id="panel-retro">
+          <div class="card card-lift overflow-hidden flex flex-col" id="panel-retro">
             <div class="px-4 pt-4 pb-3 flex items-center justify-between border-b border-gray-50">
               <div class="flex items-center gap-2">
                 <div class="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
@@ -523,53 +602,36 @@
             </div>
           </div>
 
-          <!-- ── Booth Data ───────────────────────────────────────────── -->
-          <div class="card overflow-hidden flex flex-col" id="panel-booth">
-            <div class="px-4 pt-4 pb-3 flex items-center justify-between border-b border-gray-50">
-              <div class="flex items-center gap-2">
-                <div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-                  <span class="material-symbols-outlined text-emerald-500" style="font-size:14px;">location_on</span>
-                </div>
-                <div>
-                  <p class="text-[12.5px] font-semibold text-gray-900 leading-none">Booth Data</p>
-                  <p class="text-[10px] text-gray-400 mt-0.5">booth_metadata coverage</p>
-                </div>
-              </div>
-              <span class="text-[9.5px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full" id="booth-pct">—</span>
-            </div>
-            <div id="booth-body" class="flex-1 flex flex-col">
-              <div class="flex-1 flex items-center justify-center py-10">
-                <span class="material-symbols-outlined animate-spin text-gray-200" style="font-size:22px;">refresh</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- ── Caste Data ───────────────────────────────────────────── -->
-          <div class="card overflow-hidden flex flex-col" id="panel-caste">
-            <div class="px-4 pt-4 pb-3 flex items-center justify-between border-b border-gray-50">
-              <div class="flex items-center gap-2">
-                <div class="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
-                  <span class="material-symbols-outlined text-amber-500" style="font-size:14px;">groups</span>
-                </div>
-                <div>
-                  <p class="text-[12.5px] font-semibold text-gray-900 leading-none">Caste Data</p>
-                  <p class="text-[10px] text-gray-400 mt-0.5">caste_details coverage</p>
-                </div>
-              </div>
-              <span class="text-[9.5px] font-semibold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full" id="caste-pct">—</span>
-            </div>
-            <div id="caste-body" class="flex-1 flex flex-col">
-              <div class="flex-1 flex items-center justify-center py-10">
-                <span class="material-symbols-outlined animate-spin text-gray-200" style="font-size:22px;">refresh</span>
-              </div>
-            </div>
-          </div>
-
         </div><!-- /analytics-panels -->
-      </div><!-- /dashboard content -->
 
-      <!-- voter stub (JS compatibility) -->
-      <div id="panel-voter" class="hidden"></div>
+        <!-- ══ Caste Data — full-width analytical showcase ══ -->
+        <div class="card card-lift overflow-hidden flex flex-col mt-4" id="panel-caste">
+          <div class="px-5 pt-4 pb-3 flex items-center justify-between border-b border-gray-50">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 shadow-sm">
+                <span class="material-symbols-outlined text-white" style="font-size:16px;">diversity_3</span>
+              </div>
+              <div>
+                <p class="text-[13.5px] font-bold text-gray-900 leading-none">Caste Demographics</p>
+                <p class="text-[10.5px] text-gray-400 mt-0.5">Coverage &amp; volume across <span id="caste-sub-states">—</span> states · caste_details</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[9.5px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                <span class="material-symbols-outlined" style="font-size:11px;">map</span>
+                <span id="caste-pct">—</span>
+              </span>
+              <span class="text-[9.5px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-full">Live</span>
+            </div>
+          </div>
+          <div id="caste-body" class="flex-1 flex flex-col">
+            <div class="flex-1 flex items-center justify-center py-16">
+              <span class="material-symbols-outlined animate-spin text-gray-200" style="font-size:24px;">refresh</span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /dashboard content -->
 
     </div><!-- /dashboard-view -->
 

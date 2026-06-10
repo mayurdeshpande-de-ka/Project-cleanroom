@@ -38,6 +38,7 @@ let _f20ByType      = {};  // form20 by_type from SQLite stats (completed/total 
 // Glance Report chart instances
 let gWeekChart  = null;
 let gStateChart = null;
+let gCasteChart = null;
 
 const EL_TYPE_NAMES = { AE: 'Assembly', GE: 'General', BE: 'Bypoll', PE: 'Parliament', LE: 'Local', AC: 'Assembly' };
 const STATE_NAMES_MAP = {};  // populated lazily from filter dropdown
@@ -927,7 +928,7 @@ function bindEvents() {
 
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-// ── Dashboard extended analytics (retro, booth, voter roll, caste) ───────────
+// ── Dashboard extended analytics (retro, caste) ───────────
 let analyticsLoaded = false;
 
 async function loadDashboardAnalytics(forceRefresh = false) {
@@ -937,8 +938,6 @@ async function loadDashboardAnalytics(forceRefresh = false) {
     if (!res.ok && res.status !== 202) { console.error('analytics fetch:', res.status); return; }
     const d = await res.json();
     renderRetroPanel(d.retro);
-    renderBoothPanel(d.booth);
-    renderVoterPanel(d.voter_roll);
     renderCastePanel(d.caste);
     if (d.mapping_years || d.mapping_entries) {
       updateForm20WithMapping(d.mapping_years || 0, d.mapping_entries || 0, _f20Total, d.mapping_by_type || {});
@@ -957,24 +956,6 @@ async function loadDashboardAnalytics(forceRefresh = false) {
 function fmtNum(n) {
   if (n == null) return '—';
   return Number(n).toLocaleString('en-IN');
-}
-
-function lockPanel(bodyId, errMsg) {
-  const el = document.getElementById(bodyId);
-  if (!el) return;
-  const notExist = errMsg && (errMsg.includes('does not exist') || errMsg.includes('relation'));
-  const noAccess = errMsg && errMsg.includes('permission');
-  const icon   = notExist ? 'schedule' : 'lock';
-  const title  = notExist ? 'Table not yet populated' : noAccess ? 'DB access required' : 'Unavailable';
-  const detail = notExist ? 'Data will appear once this table is loaded in RDS.'
-                : noAccess ? 'Contact DB admin to grant SELECT access on this table.'
-                : 'Unable to load data from RDS.';
-  el.innerHTML = `
-    <div class="flex flex-col items-center justify-center gap-2 py-6 text-center">
-      <span class="material-symbols-outlined text-gray-300" style="font-size:28px;">${icon}</span>
-      <p class="text-[11px] font-semibold text-gray-400">${title}</p>
-      <p class="text-[10px] text-gray-300 max-w-[220px] leading-relaxed">${detail}</p>
-    </div>`;
 }
 
 function typeColor(type) {
@@ -1149,6 +1130,12 @@ function renderRetroPanel(r) {
   if (setCov) setCov.textContent = fmtNum(acAvail) + ' / ' + fmtNum(acTotal) + ' ACs in DB';
   if (setBar) setBar.style.width = Math.min(pct, 100) + '%';
 
+  // Hero ribbon — retro coverage
+  const hr = document.getElementById('hero-retro');
+  const hrs = document.getElementById('hero-retro-sub');
+  if (hr)  hr.textContent  = pct + '%';
+  if (hrs) hrs.textContent = fmtNum(acAvail) + ' ACs in DB';
+
   // ── By Election Type (AE / GE — non-BP) ──────────────────────────────────
   const typeWrap = document.getElementById('retro-type-rows');
   if (typeWrap && r.by_type_ac) {
@@ -1199,97 +1186,6 @@ function renderRetroPanel(r) {
   }
 }
 
-function renderBoothPanel(d) {
-  const pctEl = document.getElementById('booth-pct');
-  const body  = document.getElementById('booth-body');
-  if (!d || !d.available) {
-    if (pctEl) pctEl.textContent = '—';
-    if (body)  body.innerHTML = _lockHTML(d?.error);
-    return;
-  }
-  const pct = d.total_acs > 0 ? Math.round((d.acs_with_data / d.total_acs) * 100) : 0;
-  if (pctEl) { pctEl.textContent = pct + '%'; }
-
-  if (!body) return;
-  const max = d.by_state?.[0]?.booths || 1;
-
-  body.innerHTML = `
-    <!-- KPI strip -->
-    <div class="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-50">
-      ${[
-        { val: fmtNum(d.states),       label:'States',  color:'text-emerald-600' },
-        { val: fmtNum(d.booths),       label:'Booths',  color:'text-gray-800'    },
-        { val: fmtNum(d.total_voters), label:'Voters',  color:'text-gray-800'    },
-      ].map(k => `
-        <div class="flex flex-col items-center py-3">
-          <span class="text-[17px] font-black tabular-nums leading-none ${k.color}">${k.val}</span>
-          <span class="text-[9.5px] text-gray-400 font-medium mt-1">${k.label}</span>
-        </div>`).join('')}
-    </div>
-    <!-- AC coverage progress -->
-    <div class="px-4 py-3 border-b border-gray-50">
-      <div class="flex items-center justify-between mb-1.5">
-        <span class="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest">AC Coverage</span>
-        <span class="text-[10.5px] font-bold text-emerald-600">${pct}%  <span class="font-normal text-gray-400">${fmtNum(d.acs_with_data)} / ${fmtNum(d.total_acs)}</span></span>
-      </div>
-      <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div class="h-full bg-emerald-400 rounded-full bar-fill" style="width:${pct}%"></div>
-      </div>
-    </div>
-    <!-- Top states -->
-    <div class="px-4 py-3">
-      <p class="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Top States by Booths</p>
-      <div class="flex flex-col gap-1.5">
-        ${(d.by_state || []).slice(0, 6).map(s => {
-          const p = Math.round((s.booths / max) * 100);
-          return `<div class="flex items-center gap-2">
-            <span class="text-[10.5px] font-semibold text-gray-700 w-7 shrink-0">${s.state}</span>
-            <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div class="h-full bg-emerald-400 rounded-full" style="width:${p}%"></div>
-            </div>
-            <span class="text-[10px] tabular-nums text-gray-500 w-16 text-right shrink-0">${fmtNum(s.booths)}</span>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
-}
-
-function renderVoterPanel(d) {
-  if (!d || !d.available) {
-    lockPanel('voter-body', d?.error);
-    const el = document.getElementById('voter-count'); if (el) el.textContent = '—';
-    return;
-  }
-  const el = document.getElementById('voter-count'); if (el) el.textContent = fmtNum(d.total_voters);
-  const body = document.getElementById('voter-body');
-  if (!body) return;
-  const maxV = d.by_state?.[0]?.voters || 1;
-  body.innerHTML = `
-    <div class="grid grid-cols-3 gap-2 mb-1">
-      <div class="bg-gray-50 rounded-lg p-2 text-center">
-        <p class="text-[18px] font-bold text-blue-600 tabular-nums">${fmtNum(d.states)}</p>
-        <p class="text-[10px] text-gray-400">States</p>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-2 text-center">
-        <p class="text-[18px] font-bold text-gray-800 tabular-nums">${fmtNum(d.acs_with_data)}</p>
-        <p class="text-[10px] text-gray-400">ACs</p>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-2 text-center">
-        <p class="text-[18px] font-bold text-gray-800 tabular-nums">${fmtNum(d.years)}</p>
-        <p class="text-[10px] text-gray-400">Years</p>
-      </div>
-    </div>
-    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Top States by Voters</p>
-    ${(d.by_state || []).map(s => `
-      <div class="flex items-center gap-2">
-        <span class="text-[11px] font-semibold text-gray-700 w-8 shrink-0">${s.state}</span>
-        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div class="h-full bg-blue-400 rounded-full" style="width:${Math.round((s.voters/maxV)*100)}%"></div>
-        </div>
-        <span class="text-[10.5px] tabular-nums text-gray-500 w-20 text-right">${fmtNum(s.voters)}</span>
-      </div>`).join('')}`;
-}
-
 function _lockHTML(errMsg) {
   const notExist = errMsg && (errMsg.includes('does not exist') || errMsg.includes('relation'));
   const noPerm   = errMsg && errMsg.includes('permission');
@@ -1305,51 +1201,222 @@ function _lockHTML(errMsg) {
   </div>`;
 }
 
+// ── Caste category display-name normalisation ────────────────────────────────
+// Merges dirty duplicates (e.g. "MUSLIM" + "Muslim", repeated "Buddhist") and
+// produces a clean, human-readable label. Known acronyms stay upper-case.
+const CASTE_ACRONYMS = new Set(['SC', 'ST', 'OBC', 'GEN', 'EBC', 'BC', 'SBC', 'MBC', 'DNT']);
+function casteDisplayName(raw) {
+  const k = String(raw || 'Other').trim();
+  if (!k) return 'Other';
+  const up = k.toUpperCase();
+  if (CASTE_ACRONYMS.has(up)) return up;
+  // Title-case multi-word / all-caps names: "MINORITY" -> "Minority"
+  return k.toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+// Palette for caste categories (stable, distinct)
+const CASTE_PALETTE = ['#f59e0b','#6366f1','#10b981','#3b82f6','#ec4899','#8b5cf6','#14b8a6','#ef4444','#84cc16','#f97316','#06b6d4','#a855f7'];
+
 function renderCastePanel(d) {
   const pctEl = document.getElementById('caste-pct');
+  const subStatesEl = document.getElementById('caste-sub-states');
   const body  = document.getElementById('caste-body');
+
+  // Hero ribbon (populate regardless of layout)
+  const heroCaste    = document.getElementById('hero-caste');
+  const heroCasteSub = document.getElementById('hero-caste-sub');
+
   if (!d || !d.available) {
     if (pctEl) pctEl.textContent = '—';
+    if (heroCaste) heroCaste.textContent = '—';
     if (body)  body.innerHTML = _lockHTML(d?.error);
     return;
   }
-  if (pctEl) pctEl.textContent = fmtNum(d.acs_with_data) + ' ACs';
+
+  // ── Clean / dedupe categories ──────────────────────────────────────────────
+  const merged = {};
+  (d.by_category || []).forEach(c => {
+    const name = casteDisplayName(c.category);
+    if (!merged[name]) merged[name] = { category: name, acs: 0, rows: 0 };
+    merged[name].acs  = Math.max(merged[name].acs, c.acs || 0); // distinct-AC: take max, not sum
+    merged[name].rows += (c.rows || 0);
+  });
+  const cats = Object.values(merged).sort((a, b) => b.acs - a.acs);
+
+  const acsCovered  = d.acs_with_data || 0;
+  const totalRows   = d.total_rows || cats.reduce((a, c) => a + c.rows, 0);
+  const realCatN    = cats.length;            // deduped count
+  const rawCatN     = d.categories || realCatN;
+  const density     = acsCovered > 0 ? (totalRows / acsCovered) : 0;
+
+  if (pctEl) pctEl.textContent = fmtNum(acsCovered) + ' ACs';
+  if (subStatesEl) subStatesEl.textContent = fmtNum(d.states);
+  if (heroCaste)    heroCaste.textContent    = fmtNum(totalRows);
+  if (heroCasteSub) heroCasteSub.textContent = `${realCatN} categories · ${fmtNum(acsCovered)} ACs`;
+
   if (!body) return;
-  const maxC = d.top_states?.[0]?.acs || 1;
+
+  // ── Coverage tiers ─────────────────────────────────────────────────────────
+  const tierOf = pct => pct >= 75 ? 'core' : pct >= 40 ? 'strong' : pct >= 10 ? 'regional' : 'sparse';
+  const TIER_META = {
+    core:     { label: 'Near-universal', color: '#059669', bg: 'bg-emerald-50 text-emerald-700' },
+    strong:   { label: 'Strong',          color: '#2563eb', bg: 'bg-blue-50 text-blue-700' },
+    regional: { label: 'Regional',        color: '#d97706', bg: 'bg-amber-50 text-amber-700' },
+    sparse:   { label: 'Sparse',          color: '#94a3b8', bg: 'bg-slate-100 text-slate-500' },
+  };
+  cats.forEach(c => { c.pct = acsCovered > 0 ? (c.acs / acsCovered) * 100 : 0; c.tier = tierOf(c.pct); });
+
+  const coreCats = cats.filter(c => c.tier === 'core');
+  const tierCounts = cats.reduce((m, c) => { m[c.tier] = (m[c.tier] || 0) + 1; return m; }, {});
+
+  // ── Auto-generated insight (PowerBI-style headline) ────────────────────────
+  const topNames = coreCats.slice(0, 3).map(c => c.category);
+  const longTail = cats.filter(c => c.tier === 'sparse' || c.tier === 'regional').slice(-3).map(c => c.category);
+  let insight;
+  if (topNames.length) {
+    const named = coreCats.slice(0, 3);
+    const minCore = Math.floor(Math.min(...named.map(c => c.pct)));
+    insight = `<b>${topNames.join(', ')}</b> data reaches <b>${minCore}%+</b> of all ${fmtNum(acsCovered)} covered ACs — the most complete demographic dimensions.`;
+    if (longTail.length) insight += ` In contrast, ${longTail.join(', ')} remain regional/sparse, signalling where caste enrichment is still thin.`;
+  } else {
+    insight = `Caste data spans ${realCatN} categories across ${fmtNum(d.states)} states with an average of <b>${density.toFixed(1)} records/AC</b>.`;
+  }
+
+  // ── Donut: record-volume share (top 6 + Others) ────────────────────────────
+  const byRows = [...cats].sort((a, b) => b.rows - a.rows);
+  const donutTop = byRows.slice(0, 6);
+  const otherRows = byRows.slice(6).reduce((a, c) => a + c.rows, 0);
+  const donutLabels = donutTop.map(c => c.category).concat(otherRows > 0 ? ['Others'] : []);
+  const donutData   = donutTop.map(c => c.rows).concat(otherRows > 0 ? [otherRows] : []);
+  const donutColors = donutTop.map((_, i) => CASTE_PALETTE[i % CASTE_PALETTE.length]).concat(otherRows > 0 ? ['#cbd5e1'] : []);
+
+  const topStates = (d.top_states || []);
+  const maxStateAc = topStates[0]?.acs || 1;
+
   body.innerHTML = `
-    <div class="grid grid-cols-3 gap-2 mb-1">
-      <div class="bg-gray-50 rounded-lg p-2 text-center">
-        <p class="text-[18px] font-bold text-amber-600 tabular-nums">${fmtNum(d.states)}</p>
-        <p class="text-[10px] text-gray-400">States</p>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-2 text-center">
-        <p class="text-[18px] font-bold text-gray-800 tabular-nums">${fmtNum(d.categories)}</p>
-        <p class="text-[10px] text-gray-400">Categories</p>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-2 text-center">
-        <p class="text-[18px] font-bold text-gray-800 tabular-nums">${fmtNum(d.total_rows)}</p>
-        <p class="text-[10px] text-gray-400">Records</p>
-      </div>
-    </div>
-    ${d.by_category?.length ? `
-      <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">By Category</p>
-      ${d.by_category.map(c => `
-        <div class="flex items-center gap-2">
-          <span class="text-[11px] font-semibold text-gray-700 w-14 shrink-0 truncate">${c.category || 'Other'}</span>
-          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div class="h-full bg-amber-400 rounded-full" style="width:${maxC>0?Math.round((c.acs/maxC)*100):0}%"></div>
-          </div>
-          <span class="text-[10.5px] tabular-nums text-gray-500 w-16 text-right">${fmtNum(c.acs)} ACs</span>
-        </div>`).join('')}` : ''}
-    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 mt-1">Top States</p>
-    ${(d.top_states || []).map(s => `
-      <div class="flex items-center gap-2">
-        <span class="text-[11px] font-semibold text-gray-700 w-8 shrink-0">${s.state}</span>
-        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div class="h-full bg-amber-400 rounded-full" style="width:${Math.round((s.acs/maxC)*100)}%"></div>
+    <div class="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 fade-up">
+
+      <!-- LEFT: KPIs + donut -->
+      <div class="lg:col-span-4 flex flex-col gap-4">
+        <!-- KPI tiles -->
+        <div class="grid grid-cols-2 gap-2.5">
+          ${[
+            { v: fmtNum(acsCovered), l: 'ACs Covered', c: 'text-amber-600', i: 'map' },
+            { v: fmtNum(d.states),   l: 'States',      c: 'text-gray-900',  i: 'public' },
+            { v: realCatN,           l: 'Categories',  c: 'text-gray-900',  i: 'category', sub: rawCatN > realCatN ? `${rawCatN} raw` : '' },
+            { v: density.toFixed(1), l: 'Records / AC', c: 'text-indigo-600', i: 'density_medium' },
+          ].map(k => `
+            <div class="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-3">
+              <div class="flex items-center justify-between mb-1">
+                <span class="material-symbols-outlined text-gray-300" style="font-size:14px;">${k.i}</span>
+                ${k.sub ? `<span class="text-[8.5px] font-semibold text-gray-300">${k.sub}</span>` : ''}
+              </div>
+              <p class="text-[20px] font-black tabular-nums leading-none ${k.c}">${k.v}</p>
+              <p class="text-[9.5px] text-gray-400 font-medium mt-1 uppercase tracking-wide">${k.l}</p>
+            </div>`).join('')}
         </div>
-        <span class="text-[10.5px] tabular-nums text-gray-500 w-16 text-right">${fmtNum(s.acs)} ACs</span>
-      </div>`).join('')}`;
+
+        <!-- Record volume donut -->
+        <div class="rounded-xl border border-gray-100 p-3">
+          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Record Volume Share</p>
+          <div class="relative mx-auto" style="width:150px;height:150px;">
+            <canvas id="casteDonut"></canvas>
+            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span class="text-[17px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(totalRows)}</span>
+              <span class="text-[9px] text-gray-400 font-medium">records</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 mt-3">
+            ${donutLabels.map((lbl, i) => {
+              const share = totalRows > 0 ? Math.round((donutData[i] / totalRows) * 100) : 0;
+              return `<div class="flex items-center gap-1.5 min-w-0">
+                <span class="w-2 h-2 rounded-sm shrink-0" style="background:${donutColors[i]}"></span>
+                <span class="text-[10px] text-gray-600 truncate flex-1">${lbl}</span>
+                <span class="text-[10px] font-semibold text-gray-400 tabular-nums">${share}%</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- MIDDLE: insight + category reach -->
+      <div class="lg:col-span-5 flex flex-col gap-3">
+        <div class="insight-banner px-3.5 py-3 flex items-start gap-2.5">
+          <span class="material-symbols-outlined text-amber-500 shrink-0" style="font-size:16px;">lightbulb</span>
+          <p class="text-[11.5px] text-amber-900/90 leading-relaxed">${insight}</p>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Category Reach <span class="text-gray-300 normal-case font-medium">· % of covered ACs</span></p>
+          <div class="flex items-center gap-1.5">
+            ${['core','strong','regional','sparse'].filter(t => tierCounts[t]).map(t =>
+              `<span class="tier-chip ${TIER_META[t].bg}"><span class="w-1.5 h-1.5 rounded-full" style="background:${TIER_META[t].color}"></span>${tierCounts[t]}</span>`
+            ).join('')}
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          ${cats.map(c => {
+            const tm = TIER_META[c.tier];
+            const pctTxt = c.pct >= 10 ? Math.round(c.pct) : c.pct.toFixed(1);
+            return `
+              <div class="flex items-center gap-2.5">
+                <span class="text-[11px] font-semibold text-gray-700 w-[68px] shrink-0 truncate" title="${c.category}">${c.category}</span>
+                <div class="flex-1 h-2.5 cov-track">
+                  <div class="cov-fill" style="width:${Math.max(c.pct, 1.5)}%;background:${tm.color}"></div>
+                </div>
+                <span class="text-[10.5px] font-bold tabular-nums w-9 text-right" style="color:${tm.color}">${pctTxt}%</span>
+                <span class="text-[9.5px] text-gray-400 tabular-nums w-[58px] text-right">${fmtNum(c.acs)} ACs</span>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- RIGHT: top states -->
+      <div class="lg:col-span-3 flex flex-col">
+        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Top States by Coverage</p>
+        <div class="flex flex-col gap-1.5">
+          ${topStates.slice(0, 10).map((s, i) => {
+            const p = Math.round((s.acs / maxStateAc) * 100);
+            const rankColor = i === 0 ? 'bg-amber-100 text-amber-700' : i < 3 ? 'bg-gray-100 text-gray-600' : 'bg-gray-50 text-gray-400';
+            return `
+              <div class="flex items-center gap-2">
+                <span class="w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center shrink-0 ${rankColor}">${i + 1}</span>
+                <span class="text-[11px] font-bold text-gray-700 w-7 shrink-0">${s.state}</span>
+                <div class="flex-1 h-2 cov-track">
+                  <div class="cov-fill" style="width:${p}%;background:linear-gradient(90deg,#fbbf24,#f59e0b)"></div>
+                </div>
+                <span class="text-[10px] tabular-nums text-gray-500 w-9 text-right shrink-0">${fmtNum(s.acs)}</span>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+    </div>`;
+
+  // ── Instantiate donut ──────────────────────────────────────────────────────
+  const ctx = document.getElementById('casteDonut')?.getContext('2d');
+  if (ctx) {
+    if (gCasteChart) { gCasteChart.destroy(); gCasteChart = null; }
+    gCasteChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: donutLabels, datasets: [{ data: donutData, backgroundColor: donutColors, borderColor: '#fff', borderWidth: 2, hoverOffset: 4 }] },
+      options: {
+        cutout: '68%', responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: c => {
+                const share = totalRows > 0 ? ((c.parsed / totalRows) * 100).toFixed(1) : 0;
+                return ` ${c.label}: ${fmtNum(c.parsed)} (${share}%)`;
+              }
+            }
+          }
+        }
+      }
+    });
+  }
 }
 
 async function loadDashboardStats() {
@@ -1380,7 +1447,7 @@ async function loadDashboardStats() {
       console.warn('form20_card_stats unavailable:', e);
     }
 
-    // Extended analytics panels (Retro, Booth, Caste) from RDS
+    // Extended analytics panels (Retro, Caste) from RDS
     const isManualRefresh = document.activeElement?.id === 'dash-refresh-btn';
     loadDashboardAnalytics(isManualRefresh);
 
@@ -1408,6 +1475,10 @@ function populateForm20Card(d) {
   setEl('f20-pct-label', 'coverage');
   setEl('f20-pct-badge', pct + '% complete');
   setEl('f20-counts',    `${form20.toLocaleString()} / ${acpc.toLocaleString()} elections in Form 20`);
+
+  // Hero ribbon — pipeline coverage
+  setEl('hero-pipeline',     pct + '%');
+  setEl('hero-pipeline-sub', `${form20.toLocaleString()} / ${acpc.toLocaleString()} elections`);
 
   // Update globals so updateForm20WithMapping (from RDS analytics) uses correct numerator/denominator
   _f20Total = form20;
