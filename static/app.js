@@ -792,7 +792,7 @@ function bindEvents() {
   const dashRefreshBtn = document.getElementById('dash-refresh-btn');
   if (dashRefreshBtn) dashRefreshBtn.addEventListener('click', loadDashboardStats);
 
-  ['glance-month-filter', 'glance-state-filter', 'glance-type-filter'].forEach(id => {
+  ['glance-date-filter', 'glance-state-filter', 'glance-type-filter'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', loadGlancePanel);
   });
@@ -1551,28 +1551,19 @@ function populateForm20Card(d) {
 
 // ── Glance Report ─────────────────────────────────────────────────────────────
 async function loadGlancePanel() {
-  const monthFilter = (document.getElementById('glance-month-filter') || {}).value || '';
+  const dateFilter  = (document.getElementById('glance-date-filter') || {}).value || '';
   const stateFilter = (document.getElementById('glance-state-filter') || {}).value || '';
   const typeFilter  = (document.getElementById('glance-type-filter')  || {}).value || '';
   try {
     const params = new URLSearchParams();
-    if (monthFilter) params.append('month',   monthFilter);
+    if (dateFilter)  params.append('week',    dateFilter);
     if (stateFilter) params.append('state',   stateFilter);
     if (typeFilter)  params.append('el_type', typeFilter);
     params.append('hide_bp', '1');
 
     const glance = await apiFetch('/api/glance_report?' + params.toString());
 
-    // Populate month filter once
-    const moSel = document.getElementById('glance-month-filter');
-    if (moSel && glance.available_months && moSel.options.length <= 1) {
-      glance.available_months.forEach(m => {
-        const [yr, mo] = m.split('-');
-        moSel.appendChild(new Option(
-          new Date(yr, parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' }), m
-        ));
-      });
-    }
+
 
     // Populate state/type filters from main selects once
     const stSel = document.getElementById('glance-state-filter');
@@ -1607,8 +1598,7 @@ async function loadGlancePanel() {
     }
 
     // ── Build state → { years: Set, byWeek: {weekLabel: count} } map ──────────
-    // weekLabels from allWeeks in ascending order (oldest → newest, max 4)
-    const weekLabels = allWeeks.map(w => w.week).reverse(); // oldest first
+    const weekLabels = glance.trend_weeks_labels || [];
 
     const stateMap = {};
     allWeeks.forEach(w => {
@@ -1619,7 +1609,14 @@ async function loadGlancePanel() {
         const ty = parts.length >= 3 ? parts.slice(1, -1).join('-') : '';
         if (!stateMap[st]) stateMap[st] = { elections: [], byWeek: {} };
         stateMap[st].elections.push({ type: ty, year: yr, key: r.key, date: r.date });
-        stateMap[st].byWeek[w.week] = (stateMap[st].byWeek[w.week] || 0) + 1;
+      });
+    });
+
+    const trend = glance.trend_4_weeks || {};
+    weekLabels.forEach(wl => {
+      Object.keys(trend).forEach(st => {
+        if (!stateMap[st]) stateMap[st] = { elections: [], byWeek: {} };
+        stateMap[st].byWeek[wl] = trend[st][wl] || 0;
       });
     });
 
@@ -1634,7 +1631,7 @@ async function loadGlancePanel() {
       CT:'Chhattisgarh',
     };
 
-    const sortedStates = Object.keys(stateMap).sort();
+    const sortedStates = Object.keys(stateMap).filter(st => stateMap[st].elections.length > 0).sort();
     const maxPerWeek = Math.max(...sortedStates.map(s =>
       Math.max(...weekLabels.map(w => stateMap[s].byWeek[w] || 0))
     ), 1);

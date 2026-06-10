@@ -606,8 +606,18 @@ def glance_report():
 
     today = datetime.now().date()
     cur_week_start = today - timedelta(days=today.weekday())
-    cur_week_end   = cur_week_start + timedelta(days=6)
-    cur_week_label = f"{cur_week_start.strftime('%Y-%m-%d')} to {cur_week_end.strftime('%Y-%m-%d')}"
+
+    if filter_week:
+        try:
+            target_date = datetime.strptime(filter_week, '%Y-%m-%d').date()
+            effective_week_start = target_date - timedelta(days=target_date.weekday())
+        except Exception:
+            effective_week_start = cur_week_start
+    else:
+        effective_week_start = cur_week_start
+
+    cur_week_label = f"{cur_week_start.strftime('%Y-%m-%d')} to {(cur_week_start + timedelta(days=6)).strftime('%Y-%m-%d')}"
+    effective_week_label = f"{effective_week_start.strftime('%Y-%m-%d')} to {(effective_week_start + timedelta(days=6)).strftime('%Y-%m-%d')}"
 
     for key, date_str in history.items():
         try:
@@ -629,15 +639,7 @@ def glance_report():
             continue
         if sir_only and k_state not in sir_states:
             continue
-        # Week filter: only records whose week starts on filter_week date
-        if filter_week:
-            try:
-                fw = datetime.strptime(filter_week, '%Y-%m-%d').date()
-                rec_week = d - timedelta(days=d.weekday())
-                if rec_week != fw:
-                    continue
-            except Exception:
-                pass
+
 
         # Weekly bucket
         sw = d - timedelta(days=d.weekday())
@@ -654,10 +656,10 @@ def glance_report():
     sorted_weeks  = sorted(weekly_counts.keys(), reverse=True)
     sorted_months = sorted(monthly_counts.keys(), reverse=True)
 
-    # Glance Report accordion and trend chart show exactly the last 4 calendar weeks
+    # Glance Report accordion and trend chart show exactly the last 4 calendar weeks ending on effective_week
     display_weeks = []
     for i in range(4):
-        w_start = cur_week_start - timedelta(days=7*i)
+        w_start = effective_week_start - timedelta(days=7*i)
         w_end = w_start + timedelta(days=6)
         wl = f"{w_start.strftime('%Y-%m-%d')} to {w_end.strftime('%Y-%m-%d')}"
         display_weeks.append(wl)
@@ -667,15 +669,24 @@ def glance_report():
         weekly_counts.setdefault(w, 0)
         records_by_week.setdefault(w, [])
 
-    all_weeks = [
-        {
-            'week': w,
-            'count': weekly_counts[w],
-            'is_current': w == cur_week_label,
-            'records': sorted(records_by_week[w], key=lambda x: x['date'], reverse=True)
-        }
-        for w in display_weeks
-    ]
+    # We only send ONE week to 'all_weeks' to ensure tables/charts reflect only the selected week
+    all_weeks = [{
+        'week': effective_week_label,
+        'count': weekly_counts[effective_week_label],
+        'is_current': effective_week_label == cur_week_label,
+        'records': sorted(records_by_week[effective_week_label], key=lambda x: x['date'], reverse=True)
+    }]
+
+    # Compute 4-week trend per state for the sparkbars
+    trend_4_weeks = {}
+    for wl in display_weeks:
+        for rec in records_by_week[wl]:
+            st = rec['key'].split('-')[0]
+            if st not in trend_4_weeks:
+                trend_4_weeks[st] = {}
+            trend_4_weeks[st][wl] = trend_4_weeks[st].get(wl, 0) + 1
+            
+    trend_weeks_labels = display_weeks[::-1] # oldest to newest
 
     # Weekly breakdown inside a selected month
     weekly_in_month = {}
@@ -716,12 +727,10 @@ def glance_report():
 
     all_time_sorted = sorted(all_time_weekly.keys(), reverse=True)
 
-    # ── Week-over-week comparison ─────────────────────────────────────────────
-    # When a specific week is filtered, compare that week vs the one before it.
-    # Otherwise compare the current calendar week vs last week.
     if filter_week:
         try:
             fw       = datetime.strptime(filter_week, '%Y-%m-%d').date()
+            fw       = fw - timedelta(days=fw.weekday())
             fw_end   = fw + timedelta(days=6)
             fw_label = f"{fw.strftime('%Y-%m-%d')} to {fw_end.strftime('%Y-%m-%d')}"
             pfw      = fw - timedelta(days=7)
@@ -729,7 +738,7 @@ def glance_report():
             pfw_label= f"{pfw.strftime('%Y-%m-%d')} to {pfw_end.strftime('%Y-%m-%d')}"
             this_week_count  = weekly_counts.get(fw_label, 0)
             last_week_count  = all_time_weekly.get(pfw_label, 0)
-            effective_cur_week = fw_label  # Period label shows the selected week
+            effective_cur_week = fw_label
         except Exception:
             this_week_count  = 0
             last_week_count  = 0
@@ -761,6 +770,8 @@ def glance_report():
         'all_weekly_counts': {w: all_time_weekly[w] for w in all_time_sorted},  # full history (velocity chart)
         'monthly_counts':    {m: monthly_counts[m] for m in sorted_months},
         'all_weeks':         all_weeks,
+        'trend_4_weeks':     trend_4_weeks,
+        'trend_weeks_labels': trend_weeks_labels,
         'current_week':      effective_cur_week,   # selected week label when filtered
         'filter_month':      filter_month,
         'filter_week':       filter_week,
