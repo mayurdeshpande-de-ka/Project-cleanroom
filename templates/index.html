@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-  <title>Form 20 Operations Dashboard</title>
+  <title>Project Classroom</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet"/>
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0&display=swap" rel="stylesheet"/>
@@ -196,7 +196,7 @@
       <div class="w-6 h-6 rounded-md bg-gray-900 flex items-center justify-center">
         <span class="material-symbols-outlined text-white" style="font-size:13px;">ballot</span>
       </div>
-      <span class="text-[13px] font-semibold text-gray-900 tracking-tight">Project Clean Room</span>
+      <span class="text-[13px] font-semibold text-gray-900 tracking-tight">Project Classroom</span>
     </div>
 
     <div class="w-px h-4 bg-gray-200 shrink-0"></div>
@@ -424,8 +424,9 @@
 
       <!-- Data Table -->
       <div class="flex-1 overflow-auto custom-scrollbar">
-        <table class="w-full text-left border-collapse min-w-[900px]">
-          <thead id="table-head" class="sticky top-0 bg-white border-b border-gray-200 z-20">
+        <div class="min-h-full flex flex-col">
+          <table class="w-full text-left border-collapse min-w-[900px]">
+            <thead id="table-head" class="sticky top-0 bg-white border-b border-gray-200 z-20">
             <tr>
               <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="state">Record ID</th>
               <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
@@ -446,6 +447,18 @@
             </tr>
           </tbody>
         </table>
+        </div>
+
+        <!-- Web Application Footer -->
+        <footer class="mt-auto border-t border-gray-200 py-6 px-8 flex flex-col md:flex-row items-center justify-between gap-4 bg-transparent text-[12px] text-gray-500 shrink-0 w-full min-w-[900px]">
+          <div>
+            &copy; 2026 Project Classroom. All rights reserved.
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-gray-400" style="font-size:14px;">mail</span>
+            <span>For feedback, corrections or queries please contact <a href="mailto:mayur.deshpande@varaheanalytics" class="font-medium text-gray-700 hover:text-indigo-600 transition-colors">mayur.deshpande@varaheanalytics</a></span>
+          </div>
+        </footer>
       </div>
 
       <!-- Pagination Footer -->
@@ -480,7 +493,7 @@
       </div>
 
       <!-- ── Dashboard content ──────────────────────── -->
-      <div class="p-5 pb-10">
+      <div class="p-5 pb-10 flex-1 min-h-[calc(100vh-48px)]">
 
         <!-- ══ Executive KPI ribbon ══ -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
@@ -683,7 +696,7 @@
       </div>
 
       <!-- Analytics content -->
-      <div class="p-5 flex flex-col gap-4 pb-10">
+      <div class="p-5 flex flex-col gap-4 pb-10 flex-1 min-h-[calc(100vh-50px)]">
 
         <!-- Summary stat strip -->
         <div class="grid grid-cols-4 gap-3">
@@ -783,6 +796,16 @@
 
       </div>
 
+      <!-- Web Application Footer -->
+      <footer class="mt-auto border-t border-gray-200 py-6 px-8 flex flex-col md:flex-row items-center justify-between gap-4 bg-transparent text-[12px] text-gray-500 shrink-0">
+        <div>
+          &copy; 2026 Project Classroom. All rights reserved.
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-gray-400" style="font-size:14px;">mail</span>
+          <span>For feedback, corrections or queries please contact <a href="mailto:mayur.deshpande@varaheanalytics" class="font-medium text-gray-700 hover:text-indigo-600 transition-colors">mayur.deshpande@varaheanalytics</a></span>
+        </div>
+      </footer>
     </div><!-- /glance-view -->
 
   </main>

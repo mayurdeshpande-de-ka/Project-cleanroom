@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-  <title>Form 20 Operations - Secure Login</title>
+  <title>Project Classroom - Secure Login</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet"/>
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
@@ -12,101 +12,58 @@
       font-family: 'Inter', system-ui, sans-serif;
       margin: 0;
       padding: 0;
-      background: #0f172a;
+      background: #f5f5f5; /* Matching Dashboard */
+      color: #111827;
       overflow: hidden;
+      -webkit-font-smoothing: antialiased;
     }
     .material-symbols-outlined {
       font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     }
     
-    /* Animated Gradient Background */
-    .bg-gradient-animated {
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.15) 0%, rgba(15, 23, 42, 1) 50%);
-      animation: rotate 30s linear infinite;
-      z-index: 0;
-    }
-    
-    @keyframes rotate {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    /* Glassmorphism Card */
-    .glass-card {
-      background: rgba(30, 41, 59, 0.4);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    }
-
-    /* Floating Orbs */
-    .orb {
-      position: absolute;
-      border-radius: 50%;
-      filter: blur(60px);
-      z-index: 0;
-      opacity: 0.6;
-    }
-    .orb-1 { width: 300px; height: 300px; background: #4f46e5; top: 10%; left: 15%; animation: float 8s ease-in-out infinite; }
-    .orb-2 { width: 400px; height: 400px; background: #9333ea; bottom: 10%; right: 10%; animation: float 12s ease-in-out infinite reverse; }
-    .orb-3 { width: 200px; height: 200px; background: #2563eb; top: 40%; left: 60%; animation: float 10s ease-in-out infinite; }
-
-    @keyframes float {
-      0%, 100% { transform: translateY(0) scale(1); }
-      50% { transform: translateY(-20px) scale(1.05); }
+    /* Clean Minimal Card */
+    .minimal-card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
     }
 
     /* Button Hover Effect */
     .google-btn {
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      position: relative;
-      overflow: hidden;
+      transition: all 0.2s ease-in-out;
     }
-    .google-btn::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: linear-gradient(120deg, transparent, rgba(255,255,255,0.1), transparent);
-      transform: translateX(-100%);
-      transition: transform 0.6s;
+    .google-btn:hover {
+      background-color: #f9fafb;
+      border-color: #d1d5db;
     }
-    .google-btn:hover::after {
-      transform: translateX(100%);
+    .google-btn:active {
+      background-color: #f3f4f6;
     }
   </style>
 </head>
-<body class="antialiased text-white min-h-screen flex items-center justify-center relative">
+<body class="antialiased min-h-screen flex items-center justify-center relative">
 
-  <!-- Background Layers -->
-  <div class="bg-gradient-animated"></div>
-  <div class="orb orb-1"></div>
-  <div class="orb orb-2"></div>
-  <div class="orb orb-3"></div>
+  <!-- Minimal Background Elements (Optional subtle grid) -->
+  <div class="absolute inset-0 z-0" style="background-image: radial-gradient(#e5e7eb 1px, transparent 1px); background-size: 32px 32px; opacity: 0.5;"></div>
 
   <!-- Main Login Card -->
-  <div class="relative z-10 w-full max-w-md px-6">
-    <div class="glass-card rounded-3xl p-10 text-center transform transition-all duration-500 hover:scale-[1.02]">
+  <div class="relative z-10 w-full max-w-[400px] px-6">
+    <div class="minimal-card rounded-2xl p-10 text-center">
       
       <!-- Icon/Logo -->
-      <div class="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-6 shadow-lg shadow-indigo-500/30 ring-1 ring-white/20">
-        <span class="material-symbols-outlined text-white" style="font-size: 32px;">admin_panel_settings</span>
+      <div class="mx-auto w-14 h-14 rounded-xl bg-gray-900 flex items-center justify-center mb-6 shadow-sm">
+        <span class="material-symbols-outlined text-white" style="font-size: 28px;">school</span>
       </div>
 
       <!-- Headers -->
-      <h1 class="text-3xl font-extrabold tracking-tight text-white mb-2">Form 20 Portal</h1>
-      <p class="text-slate-400 text-sm mb-10 leading-relaxed">
+      <h1 class="text-2xl font-bold tracking-tight text-gray-900 mb-2">Project Classroom</h1>
+      <p class="text-gray-500 text-sm mb-8 leading-relaxed">
         Secure authentication required.<br>Sign in to access the operational grid.
       </p>
 
       <!-- Google Sign In Button -->
-      <a href="/login" class="google-btn flex items-center justify-center gap-3 w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-3.5 px-4 rounded-xl shadow-inner backdrop-blur-sm group">
-        <div class="bg-white p-1 rounded-full">
+      <a href="/login" class="google-btn flex items-center justify-center gap-3 w-full bg-white border border-gray-200 text-gray-700 font-medium py-3 px-4 rounded-xl shadow-sm group">
+        <div class="bg-white p-0.5 rounded-full">
           <svg class="w-5 h-5" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -119,9 +76,9 @@
       </a>
 
       <!-- Footer text -->
-      <div class="mt-8 pt-6 border-t border-slate-700/50">
-        <p class="text-[11px] text-slate-500 font-medium tracking-wide uppercase">
-          <span class="material-symbols-outlined text-[12px] align-text-bottom mr-0.5">lock</span>
+      <div class="mt-8 pt-6 border-t border-gray-100">
+        <p class="text-[11px] text-gray-400 font-medium tracking-wide uppercase flex items-center justify-center gap-1">
+          <span class="material-symbols-outlined text-[14px]">lock</span>
           Authorized Personnel Only
         </p>
       </div>
