@@ -1127,14 +1127,14 @@ function renderRetroPanel(r) {
   const setCov = document.getElementById('retro-covered-label');
   const setBar = document.getElementById('retro-prog');
   if (setPct) setPct.textContent = pct + '%';
-  if (setCov) setCov.textContent = fmtNum(acAvail) + ' / ' + fmtNum(acTotal) + ' ACs in DB';
+  if (setCov) setCov.textContent = fmtNum(acAvail) + ' / ' + fmtNum(acTotal) + ' elections covered';
   if (setBar) setBar.style.width = Math.min(pct, 100) + '%';
 
   // Hero ribbon — retro coverage
   const hr = document.getElementById('hero-retro');
   const hrs = document.getElementById('hero-retro-sub');
   if (hr)  hr.textContent  = pct + '%';
-  if (hrs) hrs.textContent = fmtNum(acAvail) + ' ACs in DB';
+  if (hrs) hrs.textContent = fmtNum(acAvail) + ' elections in DB';
 
   // ── By Election Type (AE / GE — non-BP) ──────────────────────────────────
   const typeWrap = document.getElementById('retro-type-rows');
@@ -1177,7 +1177,7 @@ function renderRetroPanel(r) {
                  intensity >= 5 ? 'bg-indigo-50 border-indigo-100' : 'bg-gray-50 border-gray-100';
       const tc = intensity >= 8 ? 'text-indigo-700' : intensity >= 5 ? 'text-indigo-600' : 'text-gray-600';
       return `
-        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.available)} / ${fmtNum(s.expected)} ACs (${s.pct}%)">
+        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.available)} / ${fmtNum(s.expected)} elections (${s.pct}%)">
           <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
           <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.available)}</span>
           <span class="text-[9px] text-gray-400 tabular-nums leading-none">${s.pct}%</span>

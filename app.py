@@ -117,44 +117,158 @@ def get_rds_db():
     return conn
 
 # ── On-demand RDS cache: refresh on reload, NOT by background polling ─────────
-# Dashboard data is served from cache (memory → disk) for an instant response.
+# Dashboard data is served from a shared Redis cache for an instant response.
 # A reload only touches RDS when the cached copy is older than CACHE_TTL_SECONDS,
-# and even then the refresh runs once in the background (single-flight) so the
-# request never blocks and concurrent reloads collapse into a single DB hit.
-# If nobody opens the dashboard, RDS is never queried — load tracks real usage.
+# and even then the refresh runs once in the background, single-flight ACROSS ALL
+# GUNICORN WORKERS (Redis SET NX EX lock) — concurrent reloads on any worker
+# collapse into a single DB hit. If nobody opens the dashboard, RDS is never
+# queried — load tracks real usage, not the clock.
+#
+# Cache lives in Redis on the EC2 host (docker-compose: service "redis"), NOT on
+# local disk — nothing here writes cache files, so there's nothing to accidentally
+# commit. If Redis is unreachable (e.g. local dev without the container), we
+# degrade gracefully to a per-process in-memory dict — fine for a single dev
+# process, but won't coordinate across workers (that's the Redis-only guarantee).
 CACHE_TTL_SECONDS = 300   # 5 min — serve cache without hitting RDS within this window
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
 
-_cache_meta_lock   = threading.Lock()
-_last_refresh_ts   = {}    # name -> epoch seconds of last successful refresh
-_refresh_in_flight = set() # names whose background refresh is currently running
+# Redis is purely a CACHE — every helper below is wrapped so that ANY Redis
+# failure (down, restarting, network blip, OOM-evicted key, etc.) degrades
+# silently to the in-memory fallback or an empty result. A request must NEVER
+# 500 because Redis had a bad moment.
+_redis_client = None   # lazy singleton; False between failed connection attempts
+_redis_warned = False
+_redis_last_attempt = 0.0
+REDIS_RETRY_INTERVAL = 30  # seconds before retrying a connection after a failure
+
+_mem_cache_lock    = threading.Lock()
+_mem_cache_data    = {}    # name -> last built payload   (in-memory fallback)
+_last_refresh_ts   = {}    # name -> epoch seconds of last successful refresh (fallback)
+_refresh_in_flight = set() # names whose background refresh is running         (fallback)
+
+
+def get_redis():
+    """Lazy singleton Redis client, or None if Redis is unreachable.
+    Retries the connection every REDIS_RETRY_INTERVAL seconds (so if the Redis
+    container starts after the app, or restarts, we self-heal without an app
+    restart) — but never blocks/raises if it's down."""
+    global _redis_client, _redis_warned, _redis_last_attempt
+    if _redis_client not in (None, False):
+        return _redis_client
+
+    now = time.time()
+    if _redis_client is False and (now - _redis_last_attempt) < REDIS_RETRY_INTERVAL:
+        return None
+    _redis_last_attempt = now
+
+    try:
+        import redis
+        client = redis.Redis.from_url(
+            REDIS_URL, decode_responses=True,
+            socket_connect_timeout=1, socket_timeout=2,
+        )
+        client.ping()
+        _redis_client = client
+        if _redis_warned:
+            print('[redis] connection restored — using shared cache again')
+            _redis_warned = False
+        return client
+    except Exception as e:
+        _redis_client = False
+        if not _redis_warned:
+            print(f'[redis] unavailable ({e}) — using in-memory cache (per-process fallback)')
+            _redis_warned = True
+        return None
+
+
+def cache_get(name):
+    """Return the cached payload for `name`, or None if not yet built.
+    Never raises — any Redis error falls back to the in-memory copy."""
+    r = get_redis()
+    if r:
+        try:
+            raw = r.get(f'cache:{name}:data')
+            if raw is not None:
+                return json.loads(raw)
+        except Exception as e:
+            print(f'[redis] get failed for {name}: {e}')
+    return _mem_cache_data.get(name)
+
+
+def cache_set(name, data):
+    """Persist `data` for `name` to Redis (shared across workers) AND keep an
+    in-memory mirror — so a transient Redis outage in cache_get() still has
+    last-known-good data to fall back to, instead of nothing."""
+    _mem_cache_data[name] = data
+    r = get_redis()
+    if r:
+        try:
+            r.set(f'cache:{name}:data', json.dumps(data))
+        except Exception as e:
+            print(f'[redis] set failed for {name}: {e}')
 
 
 def cache_is_fresh(name):
     """True if `name` was refreshed within the TTL (no DB hit needed)."""
+    r = get_redis()
+    if r:
+        try:
+            return r.exists(f'cache:{name}:fresh') == 1
+        except Exception:
+            return False
     return (time.time() - _last_refresh_ts.get(name, 0)) < CACHE_TTL_SECONDS
 
 
 def trigger_refresh(name, builder):
-    """Stale-while-revalidate, single-flight. If `name`'s cache is stale and no
-    refresh is already running, execute `builder()` once in a daemon thread.
-    Returns immediately — the request is always served from the existing cache."""
-    with _cache_meta_lock:
+    """Stale-while-revalidate, single-flight ACROSS ALL WORKERS via Redis. If
+    `name`'s cache is stale and no refresh is already running anywhere, execute
+    `builder()` once in a daemon thread. Returns immediately — the request is
+    always served from the existing cache."""
+    r = get_redis()
+    if r:
+        if cache_is_fresh(name):
+            return
+        lock_key = f'cache:{name}:lock'
+        try:
+            acquired = r.set(lock_key, '1', nx=True, ex=120)  # 2-min safety valve
+        except Exception:
+            acquired = False
+        if not acquired:
+            return  # another worker is already refreshing this cache
+
+        def _run_redis():
+            try:
+                builder()
+                r.set(f'cache:{name}:fresh', '1', ex=CACHE_TTL_SECONDS)
+            except Exception as e:
+                print(f'[cache:{name}] refresh failed: {e}')
+            finally:
+                try:
+                    r.delete(lock_key)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_run_redis, daemon=True, name=f'refresh-{name}').start()
+        return
+
+    # ── Fallback: per-process lock/timestamp (single dev process, no Redis) ──
+    with _mem_cache_lock:
         if cache_is_fresh(name) or name in _refresh_in_flight:
             return
         _refresh_in_flight.add(name)
 
-    def _run():
+    def _run_local():
         try:
             builder()
-            with _cache_meta_lock:
+            with _mem_cache_lock:
                 _last_refresh_ts[name] = time.time()
         except Exception as e:
             print(f'[cache:{name}] refresh failed: {e}')
         finally:
-            with _cache_meta_lock:
+            with _mem_cache_lock:
                 _refresh_in_flight.discard(name)
 
-    threading.Thread(target=_run, daemon=True, name=f'refresh-{name}').start()
+    threading.Thread(target=_run_local, daemon=True, name=f'refresh-{name}').start()
 
 
 # Standard ECI state codes mapping
@@ -180,9 +294,6 @@ STATE_AC_COUNTS = {
 
 # ── Live AWS Caching ────────────────────────────────────────────────────────
 
-LIVE_JSON_PATH = os.path.join(BASE_DIR, 'live_extracted.json')
-AC_PC_JSON_PATH = os.path.join(BASE_DIR, 'ac_pc_extracted.json')
-
 def fetch_live_json_sync():
     rds_conn = get_rds_db()
     if not rds_conn:
@@ -190,26 +301,23 @@ def fetch_live_json_sync():
     try:
         with rds_conn.cursor() as cur:
             cur.execute("""
-                SELECT DISTINCT state_abb, el_type, el_year 
+                SELECT DISTINCT state_abb, el_type, el_year
                 FROM public.form20_summary_view
             """)
             rds_data = cur.fetchall()
-            
+
             cur.execute("""
-                SELECT DISTINCT state_abb, el_type, el_year 
+                SELECT DISTINCT state_abb, el_type, el_year
                 FROM public.ac_election_mapping
             """)
             rds_acpc = cur.fetchall()
-        
+
         extracted_list = [{"state": str(r[0]).strip(), "el_type": str(r[1]).strip(), "el_year": str(r[2]).strip()} for r in rds_data if r[0] and r[1] and r[2]]
         acpc_list = [{"state": str(r[0]).strip(), "el_type": str(r[1]).strip(), "el_year": str(r[2]).strip()} for r in rds_acpc if r[0] and r[1] and r[2]]
-        
-        with open(LIVE_JSON_PATH, 'w', encoding='utf-8') as f:
-            json.dump(extracted_list, f)
-            
-        with open(AC_PC_JSON_PATH, 'w', encoding='utf-8') as f:
-            json.dump(acpc_list, f)
-            
+
+        cache_set('live', extracted_list)
+        cache_set('acpc', acpc_list)
+
         # Sync missing records to DB so they appear as 'Remaining' (missing)
         try:
             conn = get_db()
@@ -249,11 +357,10 @@ def _build_live():
     fetch_live_json_sync()
 
 def get_live_extracted_set():
-    if not os.path.exists(LIVE_JSON_PATH):
+    extracted_list = cache_get('live')
+    if not extracted_list:
         return set()
     try:
-        with open(LIVE_JSON_PATH, 'r', encoding='utf-8') as f:
-            extracted_list = json.load(f)
         return set((item['state'], item['el_type'], item['el_year']) for item in extracted_list)
     except Exception:
         return set()
@@ -1326,10 +1433,6 @@ def glance_report_pdf():
                      download_name=f'Weekly_Report_{f_start.strftime("%Y%m%d")}_{ts}.pdf')
 
 
-ANALYTICS_CACHE_PATH = os.path.join(BASE_DIR, 'analytics_cache.json')
-_analytics_cache = None
-
-
 def _sanitize_db_err(err):
     """Return a safe error hint without exposing internal DB details to the client."""
     if not err:
@@ -1364,114 +1467,84 @@ def build_analytics_cache():
     try:
         cur = rds.cursor()
 
-        # ── 1. Retro coverage — AC-count level, non-BP only ─────────────────
-        # Canonical AC count per state from ac_mapping (distinct constituencies).
-        # If an election has any data → all canonical ACs for that state are counted.
-        # This gives meaningful AC-level totals (e.g. 31,792 ACs expected).
-        _RETRO_CTE = '''
-            canonical AS (
-                SELECT state_abb, COUNT(DISTINCT ac_no) AS ac_count
-                FROM ac_mapping GROUP BY state_abb
-            ),
-            elections AS (
-                SELECT state_abb, el_year, el_type
-                FROM ac_election_mapping
-                WHERE POSITION('-BP' IN el_type) = 0
-                GROUP BY state_abb, el_year, el_type
-            ),
-            avail AS (
-                SELECT DISTINCT er.state_abb, e.el_year, e.el_type
-                FROM election_result er JOIN election e ON er.el_id = e.el_id
-                WHERE POSITION('-BP' IN e.el_type) = 0
-            )
-        '''
-        rows, err = _rds_query(cur, f'''
-            WITH {_RETRO_CTE}
-            SELECT
-                SUM(c.ac_count) AS total_expected,
-                SUM(CASE WHEN a.state_abb IS NOT NULL THEN c.ac_count ELSE 0 END) AS available_acs
-            FROM elections el
-            JOIN canonical c ON el.state_abb = c.state_abb
-            LEFT JOIN avail a
-                ON el.state_abb = a.state_abb
-               AND el.el_year   = a.el_year
-               AND el.el_type   = a.el_type
+        # ── 1. Retro coverage + AC-PC mapping stats (non-BP) ────────────────
+        # OPTIMISATION (DB load): the multi-million-row `election_result` table is
+        # NO LONGER scanned here. Previously this block inlined the same CTE into
+        # three queries, making Postgres re-scan election_result 3× per refresh.
+        # Now:
+        #   • availability (which state/el_type/year combos actually have results)
+        #     is reused from the retro-metadata cache, which already aggregates
+        #     election_result exactly once per refresh window;
+        #   • a SINGLE DISTINCT pass over the moderate ac_election_mapping table
+        #     feeds retro coverage AND mapping_years / mapping_entries /
+        #     mapping_by_type (previously 3 separate scans).
+        # Net: election_result 3→0 scans, ac_election_mapping 3→1, ac_mapping 3→1.
+
+        # Every non-BP (state, year, type) election — one DISTINCT scan, reused
+        # for retro coverage AND all mapping stats below. Each (state, el_year,
+        # el_type) triplet is ONE election unit: MP-2019-AE and TS-2019-AE are
+        # distinct; MP-2019-AE and MP-2019-GE are distinct; MP-2018-AE and
+        # MP-2014-GE are distinct.
+        rows_e, err_e = _rds_query(cur, '''
+            SELECT DISTINCT state_abb, el_year, el_type
+            FROM ac_election_mapping
+            WHERE POSITION('-BP' IN el_type) = 0
         ''')
-        if rows and not err:
-            ac_total, ac_avail = rows[0]
-            rows2, _ = _rds_query(cur, f'''
-                WITH {_RETRO_CTE}
-                SELECT
-                    el.el_type,
-                    SUM(c.ac_count) AS total,
-                    SUM(CASE WHEN a.state_abb IS NOT NULL THEN c.ac_count ELSE 0 END) AS available
-                FROM elections el
-                JOIN canonical c ON el.state_abb = c.state_abb
-                LEFT JOIN avail a
-                    ON el.state_abb = a.state_abb
-                   AND el.el_year   = a.el_year
-                   AND el.el_type   = a.el_type
-                GROUP BY el.el_type ORDER BY total DESC
-            ''')
-            rows3, _ = _rds_query(cur, f'''
-                WITH {_RETRO_CTE}
-                SELECT
-                    el.state_abb,
-                    SUM(c.ac_count) AS expected_acs,
-                    SUM(CASE WHEN a.state_abb IS NOT NULL THEN c.ac_count ELSE 0 END) AS available_acs,
-                    CASE WHEN SUM(c.ac_count) > 0
-                         THEN ROUND(100.0 * SUM(CASE WHEN a.state_abb IS NOT NULL THEN c.ac_count ELSE 0 END)
-                              / SUM(c.ac_count), 1)
-                         ELSE 0 END AS pct
-                FROM elections el
-                JOIN canonical c ON el.state_abb = c.state_abb
-                LEFT JOIN avail a
-                    ON el.state_abb = a.state_abb
-                   AND el.el_year   = a.el_year
-                   AND el.el_type   = a.el_type
-                GROUP BY el.state_abb
-                ORDER BY available_acs DESC LIMIT 8
-            ''')
+
+        # Availability set = (state, year, type) present in election_result, read
+        # from the retro-metadata cache instead of re-scanning election_result.
+        retro_meta = cache_get('retro')
+        if retro_meta is None:
+            retro_meta = fetch_retro_metadata_sync() or {}
+            cache_set('retro', retro_meta)
+        avail = set()
+        for st, types in (retro_meta or {}).items():
+            for ty, years in (types or {}).items():
+                if '-BP' in str(ty):
+                    continue
+                for yr in (years or {}):
+                    avail.add((str(st).strip(), str(yr).strip(), str(ty).strip()))
+
+        if rows_e is not None and not err_e:
+            # Retro coverage counts ELECTION UNITS (not ACs): of every expected
+            # (state, year, type) election in the mapping, how many have results
+            # in election_result. Each triplet counts as exactly 1.
+            years_seen   = set()
+            cov_by_type  = {}      # el_type -> [total_elections, available_elections]
+            cov_by_state = {}      # state   -> [total_elections, available_elections]
+            n_total = n_avail = 0
+            for st, yr, ty in rows_e:
+                s = str(st).strip(); y = str(yr).strip(); t = str(ty).strip()
+                years_seen.add(y)
+                n_total += 1
+                cbt = cov_by_type.setdefault(t, [0, 0]);  cbt[0] += 1
+                cbs = cov_by_state.setdefault(s, [0, 0]); cbs[0] += 1
+                if (s, y, t) in avail:
+                    n_avail += 1; cbt[1] += 1; cbs[1] += 1
             result['retro'] = {
                 'available': True,
-                'ac_total':     int(ac_total or 0),
-                'ac_available': int(ac_avail or 0),
+                'ac_total':     n_total,    # unique elections expected (mapping)
+                'ac_available': n_avail,    # unique elections with retro results
                 'by_type_ac': [
-                    {'type': r[0], 'total': int(r[1]), 'available': int(r[2])}
-                    for r in (rows2 or [])
+                    {'type': t, 'total': v[0], 'available': v[1]}
+                    for t, v in sorted(cov_by_type.items(), key=lambda kv: -kv[1][0])
                 ],
                 'top_states_ac': [
-                    {'state': r[0], 'expected': int(r[1]),
-                     'available': int(r[2]), 'pct': float(r[3] or 0)}
-                    for r in (rows3 or [])
+                    {'state': s, 'expected': v[0], 'available': v[1],
+                     'pct': round(100.0 * v[1] / v[0], 1) if v[0] else 0.0}
+                    for s, v in sorted(cov_by_state.items(), key=lambda kv: -kv[1][1])[:8]
                 ],
             }
+            result['mapping_years']   = len(years_seen)
+            result['mapping_entries'] = n_total
+            result['mapping_by_type'] = {
+                t: v[0] for t, v in sorted(cov_by_type.items(), key=lambda kv: -kv[1][0])
+            }
         else:
-            result['retro'] = {'available': False, 'error': err}
-
-        # ── 1b. AC-PC mapping stats (non-BP) ─────────────────────────────────
-        rows_m, err_m = _rds_query(cur, '''
-            SELECT
-                COUNT(DISTINCT el_year)                              AS n_years,
-                COUNT(DISTINCT (state_abb || el_year || el_type))   AS n_entries
-            FROM ac_election_mapping
-            WHERE POSITION('-BP' IN el_type) = 0
-        ''')
-        if rows_m and not err_m:
-            result['mapping_years']   = int(rows_m[0][0] or 0)
-            result['mapping_entries'] = int(rows_m[0][1] or 0)
-        else:
+            result['retro'] = {'available': False, 'error': err_e}
             result['mapping_years']   = 0
             result['mapping_entries'] = 0
-
-        # ── 1c. Mapping breakdown by election type (non-BP) ───────────────────
-        rows_mt, err_mt = _rds_query(cur, '''
-            SELECT el_type, COUNT(DISTINCT (state_abb || el_year || el_type)) AS n_entries
-            FROM ac_election_mapping
-            WHERE POSITION('-BP' IN el_type) = 0
-            GROUP BY el_type ORDER BY n_entries DESC
-        ''')
-        result['mapping_by_type'] = {r[0]: int(r[1]) for r in (rows_mt or [])} if not err_mt else {}
+            result['mapping_by_type'] = {}
 
         # ── 2 & 3. Booth metadata / Voter roll — SKIPPED ──────────────────────
         # These cards were removed from the dashboard, so we no longer scan the
@@ -1514,108 +1587,33 @@ def build_analytics_cache():
 
 
 def _build_analytics():
-    """Rebuild the dashboard analytics cache from RDS and persist it to disk.
+    """Rebuild the dashboard analytics cache from RDS and persist it to Redis.
     Triggered on dashboard reload via trigger_refresh('analytics', ...) when the
     cache is older than CACHE_TTL_SECONDS — no longer polled every 10 minutes."""
-    global _analytics_cache
     data = build_analytics_cache()
     if data:
-        _analytics_cache = data
-        try:
-            with open(ANALYTICS_CACHE_PATH, 'w', encoding='utf-8') as f:
-                json.dump(data, f)
-        except Exception:
-            pass
+        cache_set('analytics', data)
 
 
 @app.route('/api/dashboard/analytics')
 def dashboard_analytics():
     """Return cached analytics — instant response. A reload kicks a background
     refresh only when the cache is stale (see trigger_refresh)."""
-    global _analytics_cache
     trigger_refresh('analytics', _build_analytics)   # refresh-on-reload (if stale)
-    # 1. In-memory cache
-    if _analytics_cache:
-        return jsonify(_analytics_cache)
-    # 2. Disk cache (survives restarts)
-    if os.path.exists(ANALYTICS_CACHE_PATH):
-        try:
-            with open(ANALYTICS_CACHE_PATH, 'r', encoding='utf-8') as f:
-                _analytics_cache = json.load(f)
-            return jsonify(_analytics_cache)
-        except Exception:
-            pass
-    # 3. Still building — return retro only (fast enough to query live)
-    rds = get_rds_db()
-    if not rds:
-        return jsonify({'retro': {'available': False, 'error': 'RDS not configured'},
-                        'booth': {'available': False, 'error': 'cache building'},
-                        'voter_roll': {'available': False, 'error': 'cache building'},
-                        'caste': {'available': False, 'error': 'cache building'}}), 202
-    try:
-        cur = rds.cursor()
-        # Fast path: AC-count level, non-BP only
-        rows, err = _rds_query(cur, '''
-            WITH canonical AS (
-                SELECT state_abb, COUNT(DISTINCT ac_no) AS ac_count
-                FROM ac_mapping GROUP BY state_abb
-            ),
-            elections AS (
-                SELECT state_abb, el_year, el_type FROM ac_election_mapping
-                WHERE POSITION('-BP' IN el_type) = 0
-                GROUP BY state_abb, el_year, el_type
-            ),
-            avail AS (
-                SELECT DISTINCT er.state_abb, e.el_year, e.el_type
-                FROM election_result er JOIN election e ON er.el_id = e.el_id
-                WHERE POSITION('-BP' IN e.el_type) = 0
-            )
-            SELECT
-                SUM(c.ac_count) AS total_expected,
-                SUM(CASE WHEN a.state_abb IS NOT NULL THEN c.ac_count ELSE 0 END) AS available_acs
-            FROM elections el
-            JOIN canonical c ON el.state_abb = c.state_abb
-            LEFT JOIN avail a
-                ON el.state_abb = a.state_abb
-               AND el.el_year   = a.el_year
-               AND el.el_type   = a.el_type
-        ''')
-        retro_partial = {'available': False, 'error': err}
-        if rows and not err:
-            ac_total, ac_avail = rows[0]
-            retro_partial = {
-                'available': True,
-                'ac_total':     int(ac_total or 0),
-                'ac_available': int(ac_avail or 0),
-                'by_type_ac': [],
-                'top_states_ac': [],
-            }
-        # Mapping stats (fast)
-        rows_m, err_m = _rds_query(cur, '''
-            SELECT COUNT(DISTINCT el_year),
-                   COUNT(DISTINCT (state_abb || el_year || el_type))
-            FROM ac_election_mapping WHERE POSITION('-BP' IN el_type) = 0
-        ''')
-        mapping_years   = int((rows_m or [[0,0]])[0][0]) if not err_m else 0
-        mapping_entries = int((rows_m or [[0,0]])[0][1]) if not err_m else 0
-        # Mapping by type (fast)
-        rows_mt, err_mt = _rds_query(cur, '''
-            SELECT el_type, COUNT(DISTINCT (state_abb || el_year || el_type)) AS n_entries
-            FROM ac_election_mapping WHERE POSITION('-BP' IN el_type) = 0
-            GROUP BY el_type ORDER BY n_entries DESC
-        ''')
-        mapping_by_type = {r[0]: int(r[1]) for r in (rows_mt or [])} if not err_mt else {}
-        return jsonify({'retro': retro_partial,
-                        'mapping_years':   mapping_years,
-                        'mapping_entries': mapping_entries,
-                        'mapping_by_type': mapping_by_type,
-                        'booth':      {'available': False, 'error': 'analytics cache still building — refresh in ~60s'},
-                        'voter_roll': {'available': False, 'error': 'analytics cache still building — refresh in ~60s'},
-                        'caste':      {'available': False, 'error': 'analytics cache still building — refresh in ~60s'}}), 202
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        rds.close()
+    # 1. Shared cache (Redis on EC2 / in-memory for local dev)
+    cached = cache_get('analytics')
+    if cached:
+        return jsonify(cached)
+    # 2. Cache empty (first reload after a deploy/restart). The single-flight
+    #    background build was already kicked above and fills the cache within a
+    #    couple of seconds — so return a lightweight "building" payload WITHOUT
+    #    touching RDS here. This keeps even cold reloads off the database.
+    building = 'analytics cache building — reload in a few seconds'
+    return jsonify({'retro':      {'available': False, 'error': building},
+                    'mapping_years': 0, 'mapping_entries': 0, 'mapping_by_type': {},
+                    'booth':      {'available': False, 'error': building},
+                    'voter_roll': {'available': False, 'error': building},
+                    'caste':      {'available': False, 'error': building}}), 202
 
 
 @app.route('/api/form20_card_stats')
@@ -1632,34 +1630,30 @@ def form20_card_stats():
     # ── Load form20 live data ────────────────────────────────────────────────
     form20_set = set()
     form20_list = []
-    if os.path.exists(LIVE_JSON_PATH):
-        try:
-            with open(LIVE_JSON_PATH, 'r', encoding='utf-8') as f:
-                raw = json.load(f)
-            for item in raw:
-                state   = str(item.get('state', '')).strip()
-                el_type = str(item.get('el_type', '')).strip()
-                el_year = str(item.get('el_year', '')).strip()
-                if state and el_type and el_year and '-BP' not in el_type:
-                    form20_set.add((state, el_type, el_year))
-                    form20_list.append({'state': state, 'el_type': el_type, 'el_year': el_year})
-        except Exception:
-            pass
+    raw = cache_get('live') or []
+    try:
+        for item in raw:
+            state   = str(item.get('state', '')).strip()
+            el_type = str(item.get('el_type', '')).strip()
+            el_year = str(item.get('el_year', '')).strip()
+            if state and el_type and el_year and '-BP' not in el_type:
+                form20_set.add((state, el_type, el_year))
+                form20_list.append({'state': state, 'el_type': el_type, 'el_year': el_year})
+    except Exception:
+        pass
 
     # ── Load AC-PC mapping data ──────────────────────────────────────────────
     acpc_set = set()
-    if os.path.exists(AC_PC_JSON_PATH):
-        try:
-            with open(AC_PC_JSON_PATH, 'r', encoding='utf-8') as f:
-                raw2 = json.load(f)
-            for item in raw2:
-                state   = str(item.get('state', '')).strip()
-                el_type = str(item.get('el_type', '')).strip()
-                el_year = str(item.get('el_year', '')).strip()
-                if state and el_type and el_year and '-BP' not in el_type:
-                    acpc_set.add((state, el_type, el_year))
-        except Exception:
-            pass
+    raw2 = cache_get('acpc') or []
+    try:
+        for item in raw2:
+            state   = str(item.get('state', '')).strip()
+            el_type = str(item.get('el_type', '')).strip()
+            el_year = str(item.get('el_year', '')).strip()
+            if state and el_type and el_year and '-BP' not in el_type:
+                acpc_set.add((state, el_type, el_year))
+    except Exception:
+        pass
 
     # ── Compute metrics ──────────────────────────────────────────────────────
     form20_count  = len(form20_set)
@@ -1906,8 +1900,6 @@ def export_records():
 
 # ── Retro Export (live from AWS RDS: election_result ⋈ election) ─────────────
 
-RETRO_META_JSON_PATH = os.path.join(BASE_DIR, 'retro_metadata.json')
-
 # Canonical column order — mirrors the historical "SELECT er.*, e.*" shape so the
 # exported file stays compatible with the previous RETRO.csv (el_id appears twice).
 RETRO_HEADERS = [
@@ -1924,9 +1916,6 @@ RETRO_SELECT = (
     "er.gender, er.age, er.incumbency, e.el_id, e.el_year, e.el_type "
     "FROM election_result er JOIN election e ON er.el_id = e.el_id"
 )
-
-retro_metadata_cache = None
-
 
 def fetch_retro_metadata_sync():
     """Build {state: {el_type: {year: count}}} live from RDS. Full scan — cached."""
@@ -1946,11 +1935,6 @@ def fetch_retro_metadata_sync():
                 continue
             s, t, y = str(state).strip(), str(el_type).strip(), str(el_year).strip()
             meta.setdefault(s, {}).setdefault(t, {})[y] = cnt
-        try:
-            with open(RETRO_META_JSON_PATH, 'w', encoding='utf-8') as f:
-                json.dump(meta, f)
-        except Exception:
-            pass
         return meta
     except Exception as e:
         print(f"fetch_retro_metadata_sync error: {e}")
@@ -1960,29 +1944,23 @@ def fetch_retro_metadata_sync():
 
 
 def get_retro_metadata_dict():
-    """Return cached retro metadata, falling back to disk, then a one-time live build."""
-    global retro_metadata_cache
-    if retro_metadata_cache is not None:
-        return retro_metadata_cache
-    if os.path.exists(RETRO_META_JSON_PATH):
-        try:
-            with open(RETRO_META_JSON_PATH, 'r', encoding='utf-8') as f:
-                retro_metadata_cache = json.load(f)
-                return retro_metadata_cache
-        except Exception:
-            pass
-    retro_metadata_cache = fetch_retro_metadata_sync() or {}
-    return retro_metadata_cache
+    """Return cached retro metadata, falling back to a one-time live build if
+    the shared cache is empty (e.g. very first request after a fresh deploy)."""
+    cached = cache_get('retro')
+    if cached is not None:
+        return cached
+    meta = fetch_retro_metadata_sync() or {}
+    cache_set('retro', meta)
+    return meta
 
 
 def _build_retro():
     """Rebuild the retro metadata cache from RDS. Triggered on retro/dashboard
     reload via trigger_refresh('retro', ...) when the cache is stale — no longer
     polled every 10 minutes."""
-    global retro_metadata_cache
     meta = fetch_retro_metadata_sync()
     if meta is not None:
-        retro_metadata_cache = meta
+        cache_set('retro', meta)
 
 
 @app.route('/api/retro/metadata')
