@@ -32,9 +32,27 @@ google = oauth.register(
     client_kwargs={'scope': 'openid email profile'},
 )
 
+# ── Local-dev auth bypass ─────────────────────────────────────────────────────
+# Google OAuth needs valid client credentials + a registered redirect URI, which
+# aren't available in local development. When DISABLE_AUTH is set (auto-enabled for
+# `python app.py` — see __main__), every request is treated as a signed-in dev user
+# so the dashboard works on localhost without OAuth. Production (gunicorn) imports
+# the module without __main__, so auth stays enforced unless DISABLE_AUTH is set.
+DEV_USER = {
+    'email':   'localdev@varaheanalytics.com',
+    'name':    'Local Dev',
+    'picture': '',
+}
+
+def auth_disabled():
+    return os.environ.get('DISABLE_AUTH', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        if auth_disabled():
+            return f(*args, **kwargs)
         if not session.get('user'):
             return redirect(url_for('login_page'))
         return f(*args, **kwargs)
@@ -106,12 +124,20 @@ def get_rds_db():
     if not all([db_host, db_user, db_pass, db_name]):
         return None
         
+    # connect_timeout + keepalives: without these a network blip leaves the
+    # background refresh thread hung forever, and the single-flight lock then
+    # blocks all future refreshes until the app restarts.
     conn = psycopg2.connect(
         host=db_host,
         port=db_port,
         user=db_user,
         password=db_pass,
-        dbname=db_name
+        dbname=db_name,
+        connect_timeout=20,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
     )
     conn.autocommit = True
     return conn
@@ -283,6 +309,26 @@ STATE_TO_ECI = {
     'LD': 'U06', 'PY': 'U07', 'JK': 'U08', 'LA': 'U09'
 }
 
+# Canonical state/UT display names — single source of truth for the Listing page,
+# so a state never appears under two labels (full name vs abbreviation vs NULL).
+# CG and CT are both Chhattisgarh; DD = Daman & Diu, DN = Dadra & Nagar Haveli.
+STATE_NAMES = {
+    'AP': 'Andhra Pradesh', 'AR': 'Arunachal Pradesh', 'AS': 'Assam', 'BR': 'Bihar',
+    'CG': 'Chhattisgarh', 'CT': 'Chhattisgarh', 'GA': 'Goa', 'GJ': 'Gujarat',
+    'HR': 'Haryana', 'HP': 'Himachal Pradesh', 'JH': 'Jharkhand', 'KA': 'Karnataka',
+    'KL': 'Kerala', 'MP': 'Madhya Pradesh', 'MH': 'Maharashtra', 'MN': 'Manipur',
+    'ML': 'Meghalaya', 'MZ': 'Mizoram', 'NL': 'Nagaland', 'OR': 'Odisha',
+    'PB': 'Punjab', 'RJ': 'Rajasthan', 'SK': 'Sikkim', 'TN': 'Tamil Nadu',
+    'TR': 'Tripura', 'UP': 'Uttar Pradesh', 'UK': 'Uttarakhand', 'WB': 'West Bengal',
+    'TS': 'Telangana', 'DL': 'Delhi', 'JK': 'Jammu & Kashmir', 'LA': 'Ladakh',
+    'AN': 'Andaman & Nicobar', 'CH': 'Chandigarh', 'PY': 'Puducherry',
+    'LD': 'Lakshadweep', 'DD': 'Daman & Diu', 'DN': 'Dadra & Nagar Haveli',
+}
+
+def canonical_state_name(code):
+    code = str(code or '').strip()
+    return STATE_NAMES.get(code, code)
+
 # Canonical Assembly Constituency (AC) counts per state/UT — mirrors STATE_AC_COUNTS in static/app.js
 STATE_AC_COUNTS = {
     'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CG': 90,  'CT': 90,  'GA': 40,
@@ -300,11 +346,26 @@ def fetch_live_json_sync():
         return
     try:
         with rds_conn.cursor() as cur:
+            # Fetch AC counts for calculations, excluding BP by default to match original logic
+            cur.execute("""
+                SELECT state_abb, el_type, el_year, COUNT(DISTINCT ac_no) AS ac_count
+                FROM public.form20_summary_view
+                WHERE el_type NOT LIKE '%BP%'
+                GROUP BY state_abb, el_type, el_year
+            """)
+            form20_rows = cur.fetchall()
+
+            # Full Form 20 election set INCLUDING bypolls (BP). A unique election is
+            # (state_abb, el_type, el_year); any election present here is "done" and
+            # must be hidden from the Listing page. BP must NOT be stripped/filtered:
+            # form20_summary_view contains BP elections (e.g. AE-BP) that are genuinely
+            # complete, and an AE election being done does not mean its AE-BP sibling is.
             cur.execute("""
                 SELECT DISTINCT state_abb, el_type, el_year
                 FROM public.form20_summary_view
             """)
-            rds_data = cur.fetchall()
+            form20_all_rows = cur.fetchall()
+            rds_data = [(str(r[0]).strip(), str(r[1]).strip(), r[2]) for r in form20_all_rows if r[0] and r[1] and r[2]]
 
             cur.execute("""
                 SELECT DISTINCT state_abb, el_type, el_year
@@ -312,38 +373,77 @@ def fetch_live_json_sync():
             """)
             rds_acpc = cur.fetchall()
 
+            form20_ac_counts = {}
+            form20_type_counts = {}
+            for r in form20_rows:
+                st, t, _, c = str(r[0]).strip(), str(r[1]).strip(), r[2], int(r[3])
+                if st: form20_ac_counts[st] = form20_ac_counts.get(st, 0) + c
+                if t: form20_type_counts[t] = form20_type_counts.get(t, 0) + c
+
+            cur.execute("""
+                SELECT state_abb, el_type, el_year, COUNT(DISTINCT ac_no) AS ac_count
+                FROM public.ac_election_mapping
+                WHERE el_type NOT LIKE '%BP%'
+                GROUP BY state_abb, el_type, el_year
+            """)
+            mapping_ac_counts = {}
+            mapping_type_counts = {}
+            for r in cur.fetchall():
+                st, t, _, c = str(r[0]).strip(), str(r[1]).strip(), r[2], int(r[3])
+                if st: mapping_ac_counts[st] = mapping_ac_counts.get(st, 0) + c
+                if t: mapping_type_counts[t] = mapping_type_counts.get(t, 0) + c
+
         extracted_list = [{"state": str(r[0]).strip(), "el_type": str(r[1]).strip(), "el_year": str(r[2]).strip()} for r in rds_data if r[0] and r[1] and r[2]]
         acpc_list = [{"state": str(r[0]).strip(), "el_type": str(r[1]).strip(), "el_year": str(r[2]).strip()} for r in rds_acpc if r[0] and r[1] and r[2]]
 
         cache_set('live', extracted_list)
         cache_set('acpc', acpc_list)
+        cache_set('form20_ac_counts', form20_ac_counts)
+        cache_set('acpc_ac_counts', mapping_ac_counts)
+        cache_set('form20_type_counts', form20_type_counts)
+        cache_set('acpc_type_counts', mapping_type_counts)
 
-        # Sync missing records to DB so they appear as 'Remaining' (missing)
+        # Sync the records table to the RDS truth:
+        #   • every mapping election exists as a record (inserted as 'missing')
+        #   • every election present in Form 20 is persisted as 'db_pushed', so the
+        #     Listing page is correct even on a cold cache (no RDS round-trip needed)
         try:
             conn = get_db()
-            existing_recs = conn.execute("SELECT key FROM records").fetchall()
+            existing_recs = conn.execute("SELECT key, overall_status FROM records").fetchall()
             existing_keys = {r['key'] for r in existing_recs}
-            
+
             inserted = 0
             from datetime import datetime
             today = datetime.now().strftime('%Y-%m-%d')
             now_full = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            
+
             for item in acpc_list:
                 key = f"{item['state']}-{item['el_type']}-{item['el_year']}"
                 if key not in existing_keys:
                     conn.execute('''
-                        INSERT INTO records (state, el_type, el_year, key, overall_status, download_status, extraction_status, db_status, wip, last_updated, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (item['state'], item['el_type'], int(item['el_year']), key, 'missing', 'missing', 'pending', 'not_in_db', 0, today, now_full))
+                        INSERT INTO records (state, state_name, el_type, el_year, key, overall_status, download_status, extraction_status, db_status, wip, last_updated, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (item['state'], canonical_state_name(item['state']), item['el_type'], int(item['el_year']), key, 'missing', 'missing', 'pending', 'not_in_db', 0, today, now_full))
                     inserted += 1
-            if inserted > 0:
+
+            form20_keys = {f"{i['state']}-{i['el_type']}-{i['el_year']}" for i in extracted_list}
+            completed = 0
+            for r in existing_recs:
+                if r['key'] in form20_keys and r['overall_status'] not in ('db_pushed', 'completed'):
+                    conn.execute(
+                        "UPDATE records SET overall_status = 'db_pushed', db_status = 'in_db', last_updated = ? WHERE key = ?",
+                        (today, r['key']))
+                    completed += 1
+
+            if inserted > 0 or completed > 0:
                 conn.commit()
             conn.close()
             if inserted > 0:
                 print(f"Inserted {inserted} new AC-PC mapping elections into dashboard DB.")
+            if completed > 0:
+                print(f"Persisted {completed} Form 20 completions to dashboard DB.")
         except Exception as db_e:
-            print(f"Error inserting AC-PC mappings to SQLite: {db_e}")
+            print(f"Error syncing AC-PC mappings to SQLite: {db_e}")
             
     except Exception as e:
         print(f"Background thread error fetching AWS data: {e}")
@@ -394,10 +494,20 @@ def save_completion_history(history):
         pass
 
 def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
+    # Always present a single canonical state name so a state never appears under
+    # two labels (full name / abbreviation / NULL) in the Listing page.
+    r_dict['state_name'] = canonical_state_name(r_dict.get('state'))
+
+    # 'pending' is a legacy status (not offered in the edit modal, never produced by
+    # the download report). Normalise it to 'missing' so the pipeline has exactly
+    # three live stages and the strip math always adds up.
+    if r_dict.get('overall_status') == 'pending':
+        r_dict['overall_status'] = 'missing'
+
     key = f"{str(r_dict['state']).strip()}-{str(r_dict['el_type']).strip()}-{str(r_dict['el_year']).strip()}"
-    
+
     current_status = r_dict.get('overall_status')
-    
+
     # 1. Apply download report status if present
     if key in download_report:
         csv_status = download_report[key]
@@ -405,14 +515,16 @@ def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
             r_dict['overall_status'] = csv_status
         if csv_status == 'missing' and current_status in ('downloaded', 'pending'):
             r_dict['overall_status'] = 'missing'
-        
-    # 2. Apply live extracted status if present
-    aws_el_type = str(r_dict['el_type']).strip().replace('-BP', '')
-    is_live_completed = (str(r_dict['state']).strip(), aws_el_type, str(r_dict['el_year']).strip()) in live_extracted
+
+    # 2. Apply live (Form 20) status if present. A unique election is matched on the
+    #    full (state, el_type, el_year) — el_type is NOT stripped, so AE and AE-BP are
+    #    treated as distinct elections. Any election present in Form 20 is complete and
+    #    is hidden from the Listing page.
+    is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
     if is_live_completed:
         r_dict['overall_status'] = 'db_pushed'
         r_dict['db_status'] = 'in_db'
-        
+
     return r_dict
 
 
@@ -420,7 +532,10 @@ def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
 
 @app.before_request
 def require_login():
-    allowed_routes = ['login_page', 'login', 'auth_callback', 'static']
+    if auth_disabled():
+        session['user'] = DEV_USER   # treat every request as the dev user
+        return
+    allowed_routes = ['login_page', 'login', 'auth_callback', 'static', 'admin_ac_pct']
     if request.endpoint not in allowed_routes:
         if not session.get('user'):
             if request.path.startswith('/api/'):
@@ -429,7 +544,7 @@ def require_login():
 
 @app.route('/login_page')
 def login_page():
-    if session.get('user'):
+    if auth_disabled() or session.get('user'):
         return redirect(url_for('index'))
     return render_template('login.html')
 
@@ -498,16 +613,27 @@ def get_records():
     live_extracted = get_live_extracted_set()
     download_report = get_download_report_dict()
     history = get_completion_history()
+
+    # The list is exactly: elections in ac_election_mapping MINUS elections in
+    # form20_summary_view. When the mapping cache is populated, drop any record
+    # whose key is no longer in the mapping universe (stale/manual rows).
+    acpc_keys = {f"{i['state']}-{i['el_type']}-{i['el_year']}"
+                 for i in (cache_get('acpc') or [])}
+
     filtered_rows = []
-    
+
     for r in rows:
         r_dict = dict(r)
         r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
 
-        if status == 'remaining':
-            if r_dict['overall_status'] in ('db_pushed', 'completed'):
-                continue
-        elif status and r_dict['overall_status'] != status:
+        # HIDE COMPLETED RECORDS ENTIRELY FROM THE LIST PAGE
+        if r_dict['overall_status'] in ('db_pushed', 'completed'):
+            continue
+
+        if acpc_keys and r_dict['key'] not in acpc_keys:
+            continue
+
+        if status and status != 'remaining' and r_dict['overall_status'] != status:
             continue
 
         filtered_rows.append(r_dict)
@@ -1655,52 +1781,62 @@ def form20_card_stats():
     except Exception:
         pass
 
-    # ── Compute metrics ──────────────────────────────────────────────────────
-    form20_count  = len(form20_set)
-    acpc_count    = len(acpc_set)
-    coverage_pct  = round((form20_count / acpc_count) * 100) if acpc_count else 0
+    # ── Compute metrics (AC-wise) ──────────────────────────────────────────────────────
+    form20_ac_counts = cache_get('form20_ac_counts') or {}
+    acpc_ac_counts = cache_get('acpc_ac_counts') or {}
+    
+    total_form20_acs = sum(form20_ac_counts.values())
+    total_mapping_acs = sum(acpc_ac_counts.values())
+    
+    coverage_pct = round((total_form20_acs / total_mapping_acs) * 100) if total_mapping_acs else 0
 
     # Distinct years (non-BP)
     years_form20   = sorted(set(int(y) for _, _, y in form20_set))
     years_mapping  = sorted(set(int(y) for _, _, y in acpc_set))
 
-    # By election type breakdown
-    from collections import Counter, defaultdict
-    type_form20  = Counter(el_type for _, el_type, _ in form20_set)
-    type_mapping = Counter(el_type for _, el_type, _ in acpc_set)
-    all_types    = sorted(set(list(type_form20.keys()) + list(type_mapping.keys())))
+    # By election type breakdown (AC-wise)
+    form20_type_counts = cache_get('form20_type_counts') or {}
+    acpc_type_counts = cache_get('acpc_type_counts') or {}
+    
+    all_types = sorted(set(list(form20_type_counts.keys()) + list(acpc_type_counts.keys())))
     by_type = {}
     for t in all_types:
         by_type[t] = {
-            'in_form20':   type_form20.get(t, 0),
-            'in_mapping':  type_mapping.get(t, 0),
+            'in_form20':   form20_type_counts.get(t, 0),
+            'in_mapping':  acpc_type_counts.get(t, 0),
         }
 
-    # Top states by count in Form 20
-    state_counts = Counter(state for state, _, _ in form20_set)
-    top_states   = [{'state': s, 'count': c} for s, c in state_counts.most_common(10)]
+    # Top states by AC completion count
+    state_counts = {}
+    for state, den in acpc_ac_counts.items():
+        num = form20_ac_counts.get(state, 0)
+        pct = (num / den) * 100 if den > 0 else 0
+        state_counts[state] = num
 
-    # ── Missing entries: in mapping (262) but not yet in Form 20 ─────────────
-    # For each missing (state, el_type, el_year), credit the canonical AC count
-    # of that state — gives the total AC coverage still pending across the
-    # 262 mapping entries.
-    missing_set     = acpc_set - form20_set
-    missing_acs     = sum(STATE_AC_COUNTS.get(state, 0) for state, _, _ in missing_set)
-    missing_by_state = Counter(state for state, _, _ in missing_set)
-    missing_states   = [
-        {'state': s, 'count': c, 'acs': c * STATE_AC_COUNTS.get(s, 0)}
-        for s, c in missing_by_state.most_common()
+    top_states = [{'state': s, 'count': c} for s, c in sorted(state_counts.items(), key=lambda item: item[1], reverse=True)[:10]]
+
+    # ── Missing entries ─────────────
+    missing_acs = total_mapping_acs - total_form20_acs
+    missing_by_state = {}
+    for state, den in acpc_ac_counts.items():
+        num = form20_ac_counts.get(state, 0)
+        missing_by_state[state] = den - num
+
+    missing_states = [
+        {'state': s, 'count': 0, 'acs': missing}
+        for s, missing in sorted(missing_by_state.items(), key=lambda item: item[1], reverse=True)
+        if missing > 0
     ]
 
     return jsonify({
-        'form20_entries':   form20_count,
-        'acpc_entries':     acpc_count,
+        'form20_entries':   total_form20_acs,  # renamed concept but keep key for UI compatibility
+        'acpc_entries':     total_mapping_acs, # renamed concept but keep key for UI compatibility
         'coverage_pct':     coverage_pct,
         'years_in_form20':  years_form20,
         'years_in_mapping': years_mapping,
         'by_type':          by_type,
         'top_states':       top_states,
-        'remaining':        acpc_count - form20_count,
+        'remaining':        total_mapping_acs - total_form20_acs, # Not election count anymore, but AC count
         'missing_acs':      missing_acs,
         'missing_states':   missing_states,
     })
@@ -2105,9 +2241,55 @@ def reload_database():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+
+@app.route('/api/admin/ac_pct')
+def admin_ac_pct():
+    """Temporary admin endpoint: AC-wise % per state from form20_summary_view vs ac_election_mapping."""
+    rds = get_rds_db()
+    if not rds:
+        return jsonify({'error': 'No RDS connection'}), 503
+    try:
+        cur = rds.cursor()
+        cur.execute("""
+            SELECT state_abb, SUM(ac_count) AS total_mapping_acs
+            FROM (
+                SELECT state_abb, el_type, el_year, COUNT(DISTINCT ac_no) AS ac_count
+                FROM ac_election_mapping
+                GROUP BY state_abb, el_type, el_year
+            ) sub GROUP BY state_abb ORDER BY state_abb
+        """)
+        mapping = {r[0]: int(r[1]) for r in cur.fetchall()}
+        cur.execute("""
+            SELECT state_abb, SUM(ac_count) AS total_form20_acs
+            FROM (
+                SELECT state_abb, el_type, el_year, COUNT(DISTINCT ac_no) AS ac_count
+                FROM form20_summary_view
+                GROUP BY state_abb, el_type, el_year
+            ) sub GROUP BY state_abb ORDER BY state_abb
+        """)
+        form20 = {r[0]: int(r[1]) for r in cur.fetchall()}
+        cur.close(); rds.close()
+        all_states = sorted(set(list(mapping.keys()) + list(form20.keys())))
+        rows = []
+        total_f = total_m = 0
+        for state in all_states:
+            f = form20.get(state, 0); m = mapping.get(state, 0)
+            pct = round(f / m * 100, 2) if m > 0 else 0.0
+            total_f += f; total_m += m
+            rows.append({'state': state, 'form20_acs': f, 'mapping_acs': m, 'pct': pct})
+        total_pct = round(total_f / total_m * 100, 2) if total_m > 0 else 0.0
+        return jsonify({'rows': rows, 'total_form20': total_f, 'total_mapping': total_m, 'total_pct': total_pct})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
+    # Local dev: skip Google OAuth so the dashboard works without valid client
+    # credentials. Override by exporting DISABLE_AUTH=0 before running.
+    os.environ.setdefault('DISABLE_AUTH', '1')
+
     if not os.path.exists(DB_PATH):
         print("No database found — initialising from Excel...")
         from init_db import init_database
@@ -2115,5 +2297,7 @@ if __name__ == '__main__':
 
     print("\n  Form 20 Backlog Dashboard")
     print("  Running locally at: http://127.0.0.1:5050")
+    if auth_disabled():
+        print("  Auth: DISABLED (local dev) — signed in as", DEV_USER['email'])
     print("  Network listening at: http://0.0.0.0:5050\n")
     app.run(host='0.0.0.0', debug=True, port=5050, use_reloader=False)

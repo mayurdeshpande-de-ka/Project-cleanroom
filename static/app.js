@@ -5,8 +5,10 @@
 
 let allRecords    = [];
 let selectedIds   = new Set();
-let sortCol       = 'state';
+let sortCol       = 'key';
 let sortDir       = 'asc';
+let stateSortCol  = 'state';   // states-grouped view: 'state' | 'count'
+let stateSortDir  = 'asc';
 let editingId     = null;
 let toastTimer    = null;
 let searchTimer   = null;
@@ -44,7 +46,7 @@ const EL_TYPE_NAMES = { AE: 'Assembly', GE: 'General', BE: 'Bypoll', PE: 'Parlia
 const STATE_NAMES_MAP = {};  // populated lazily from filter dropdown
 
 const STATUS_CONFIG = {
-  'missing':    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-100',     dot: 'bg-red-400',     label: 'Remaining'   },
+  'missing':    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-100',     dot: 'bg-red-400',     label: 'Not Downloaded' },
   'pending':    { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-100',   dot: 'bg-amber-400',   label: 'Pending'   },
   'downloaded': { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-100',    dot: 'bg-blue-400',    label: 'Downloaded'},
   'extracted':  { bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-100',  dot: 'bg-violet-400',  label: 'Extracted' },
@@ -88,12 +90,14 @@ async function loadFilters() {
 
 async function loadStats() {
   const params = new URLSearchParams();
+  // NOTE: the pipeline strip always reflects the FULL pipeline for the current
+  // scope (state/type/year/SIR/BP). It deliberately ignores filters.status/wip so
+  // that selecting a stage (via KPI card or sidebar) filters only the table, not
+  // the strip — keeping the strip stable across KPI and sidebar clicks alike.
   if (filters.state)    params.set('state',    filters.state);
   if (filters.el_type)  params.set('el_type',  filters.el_type);
   if (filters.year)     params.set('year',     filters.year);
-  if (filters.status)   params.set('status',   filters.status);
   if (filters.sir_only) params.set('sir_only', '1');
-  if (filters.wip)      params.set('wip', '1');
   if (filters.search)   params.set('search',   filters.search);
   if (!filters.show_bp) params.set('hide_bp',  '1');
 
@@ -103,72 +107,40 @@ async function loadStats() {
     const total = s.total || 0;
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val ?? '0'; };
-    set('sl-all-count', total);
+    // Sidebar is the single home for per-stage counts. Completed records are hidden
+    // from this page, so "All Remaining" = Not Downloaded + Downloaded + Extracted.
+    set('sl-all-count', (bs.missing || 0) + (bs.pending || 0) + (bs.downloaded || 0) + (bs.extracted || 0));
     set('sl-dl-count',  bs.downloaded || '0');
     set('sl-ex-count',  bs.extracted  || '0');
-    set('sl-co-count',  (bs.db_pushed || 0) + (bs.completed || 0));
-    set('sl-pe-count',  bs.pending    || '0');
     set('sl-mi-count',  bs.missing    || '0');
     set('sl-wip-count', s.wip_count   || '0');
 
-    set('kpi-dl-count', bs.downloaded || '0');
-    set('kpi-ex-count', bs.extracted  || '0');
-    set('kpi-mi-count', bs.missing    || '0');
-
     const completed = (bs.db_pushed || 0) + (bs.completed || 0);
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-    const totalRemaining = total - completed;
 
-    // Listing pipeline strip
-    set('kpi-tr-count', totalRemaining);
-    const listPctEl  = document.getElementById('listing-pct');
-    const listProgBar = document.getElementById('listing-prog-bar');
-    if (listPctEl)  listPctEl.textContent  = pct + '%';
-    if (listProgBar) listProgBar.style.width = pct + '%';
+    // Sidebar progress footer — the single home for overall completion + pipeline mix.
+    const segW = (id, n) => {
+      const el = document.getElementById(id);
+      if (el) el.style.width = (total > 0 ? (n / total) * 100 : 0) + '%';
+    };
+    segW('seg-completed',  completed);
+    segW('seg-extracted',  bs.extracted  || 0);
+    segW('seg-downloaded', bs.downloaded || 0);
 
-    const pbFill = document.getElementById('progress-bar-fill');
-    if (pbFill) pbFill.style.width = pct + '%';
     set('progress-text', `${completed} / ${total} completed`);
-
     const pctSidebar = document.getElementById('progress-pct-sidebar');
     if (pctSidebar) pctSidebar.textContent = pct + '%';
-
-    // ── AC counts per pipeline stage ─────────────────────────────────────────
-    // Sum canonical AC count × elections-in-that-stage across all states
-    if (s.by_state && s.by_state.length) {
-      let acMissing = 0, acDownloaded = 0, acExtracted = 0;
-      for (const row of s.by_state) {
-        const ac = STATE_AC_COUNTS[row.state] || 0;
-        acMissing    += (row.missing    || 0) * ac;
-        acDownloaded += (row.downloaded || 0) * ac;
-        acExtracted  += (row.extracted  || 0) * ac;
-      }
-      const acTotalRemaining = acMissing + acDownloaded + acExtracted;
-      const fmtAC = n => n > 0 ? `${n.toLocaleString()} ACs` : '';
-      set('kpi-tr-acs', fmtAC(acTotalRemaining));
-      set('kpi-mi-acs', fmtAC(acMissing));
-      set('kpi-dl-acs', fmtAC(acDownloaded));
-      set('kpi-ex-acs', fmtAC(acExtracted));
-    }
   } catch (e) { console.error('loadStats:', e); }
 
-  // ── Missing ACs across the 262 mapping entries not yet in Form 20 ─────────
-  try {
-    const f20 = await apiFetch('/api/form20_card_stats');
-    _missingACsTotal = f20.missing_acs || 0;
-    updateRecordBadge();
-  } catch (e) { console.warn('form20_card_stats (badge) unavailable:', e); }
+  updateRecordBadge();
 }
 
-// Updates the "N records" badge on the Listing page header, appending the
-// total AC count still missing across the 262 mapping entries.
+// Header badge: just how many elections the current filters show.
 function updateRecordBadge() {
   const badge = document.getElementById('record-count-badge');
   if (!badge) return;
   const count = allRecords.length;
-  let text = `${count} records`;
-  if (_missingACsTotal > 0) text += ` · ${_missingACsTotal.toLocaleString()} ACs missing`;
-  badge.textContent = text;
+  badge.textContent = count === 1 ? '1 election' : `${count.toLocaleString()} elections`;
 }
 
 async function loadRecords() {
@@ -187,7 +159,7 @@ async function loadRecords() {
     renderTable();
   } catch (e) {
     document.getElementById('table-body').innerHTML =
-      `<tr><td colspan="7" class="px-5 py-10 text-center text-gray-500 text-[12px]">Failed to load — ${e.message}</td></tr>`;
+      `<tr><td colspan="4" class="px-5 py-10 text-center text-gray-500 text-[12px]">Failed to load — ${e.message}</td></tr>`;
   }
 }
 
@@ -198,7 +170,7 @@ function renderTable() {
 
   if (!allRecords.length) {
     tbody.innerHTML = `
-      <tr><td colspan="7" class="px-5 py-12 text-center">
+      <tr><td colspan="4" class="px-5 py-12 text-center">
         <div class="flex flex-col items-center gap-2 text-gray-400">
           <span class="material-symbols-outlined" style="font-size:28px;">search_off</span>
           <p class="text-[12px]">No records match the current filters.</p>
@@ -216,36 +188,42 @@ function renderTable() {
       if (!grouped[s]) grouped[s] = [];
       grouped[s].push(rec);
     });
-    const stateKeys = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+
+    const stateKeys = Object.keys(grouped).sort((a, b) => {
+      let cmp;
+      if (stateSortCol === 'count') cmp = grouped[a].length - grouped[b].length;
+      else cmp = a.localeCompare(b);
+      return stateSortDir === 'asc' ? cmp : -cmp;
+    });
 
     document.getElementById('pagination-text').textContent =
-      `${allRecords.length} records across ${stateKeys.length} states`;
+      `${allRecords.length} remaining elections across ${stateKeys.length} states`;
+
+    const arrow = col => stateSortCol === col
+      ? `<span class="ml-0.5">${stateSortDir === 'asc' ? '▲' : '▼'}</span>` : '';
 
     thead.innerHTML = `
       <tr>
-        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">State</th>
-        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Elections</th>
-        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Status Breakdown</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none st-sortable" data-col="state">State${arrow('state')}</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none st-sortable" data-col="count">Remaining${arrow('count')}</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider w-[40%]">Pipeline</th>
         <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Open</th>
       </tr>`;
 
     let html = '';
     stateKeys.forEach(s => {
       const records = grouped[s];
-      let missing = 0, extracted = 0, downloaded = 0, pending = 0;
+      let missing = 0, extracted = 0, downloaded = 0;
       records.forEach(r => {
         const st = r.overall_status;
-        if (st === 'missing')    missing++;
+        if (st === 'missing')         missing++;
         else if (st === 'extracted')  extracted++;
         else if (st === 'downloaded') downloaded++;
-        else if (st === 'pending')    pending++;
       });
-
       const chips = [
-        extracted  > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-violet-50 text-violet-700 border border-violet-100 px-2 py-0.5 rounded-full">${extracted} Ext</span>` : '',
-        downloaded > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full">${downloaded} Dwn</span>` : '',
-        pending    > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded-full">${pending} Pnd</span>` : '',
-        missing    > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-gray-100 text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full">${missing} Mis</span>` : '',
+        missing    > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-gray-100 text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full">${missing} Not Downloaded</span>` : '',
+        downloaded > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full">${downloaded} Downloaded</span>` : '',
+        extracted  > 0 ? `<span class="inline-flex items-center gap-1 text-[10.5px] font-semibold bg-violet-50 text-violet-700 border border-violet-100 px-2 py-0.5 rounded-full">${extracted} Extracted</span>` : '',
       ].filter(Boolean).join('');
 
       const stateCode = records[0]?.state;
@@ -260,13 +238,10 @@ function renderTable() {
               <div class="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
                 <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">map</span>
               </div>
-              <div>
-                <p class="text-[13px] font-semibold text-gray-900">${x(s)}</p>
-                <p class="text-[11px] text-gray-400">Click to view elections</p>
-              </div>
+              <p class="text-[13px] font-semibold text-gray-900">${x(s)}</p>
             </div>
           </td>
-          <td class="px-5 py-3">
+          <td class="px-5 py-3 whitespace-nowrap">
             <span class="text-[13px] font-semibold text-gray-700 tabular-nums">${records.length}</span>
             <span class="text-[11px] text-gray-400 ml-1">elections</span>
             ${totalStateACs ? `<span class="text-[11px] text-gray-400 ml-1">(${totalStateACs} ACs)</span>` : ''}
@@ -281,6 +256,15 @@ function renderTable() {
     });
     tbody.innerHTML = html;
 
+    thead.querySelectorAll('.st-sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const c = th.dataset.col;
+        stateSortDir = stateSortCol === c && stateSortDir === 'asc' ? 'desc' : 'asc';
+        stateSortCol = c;
+        renderTable();
+      });
+    });
+
   } else {
     // ── Detail view (records for a single state) ───────────────────────────
     const records = allRecords
@@ -294,13 +278,16 @@ function renderTable() {
       });
 
     document.getElementById('pagination-text').textContent =
-      `${records.length} records for ${currentDetailState}`;
+      `${records.length} remaining elections in ${currentDetailState}`;
+
+    const arrow = col => sortCol === col
+      ? `<span class="ml-0.5">${sortDir === 'asc' ? '▲' : '▼'}</span>` : '';
 
     thead.innerHTML = `
       <tr>
-        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="state">Record ID</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none sortable" data-col="key">Record ID${arrow('key')}</th>
         <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Location</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none sortable" data-col="el_year">Election${arrow('el_year')}</th>
         <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Actions</th>
       </tr>`;
 
@@ -313,7 +300,7 @@ function renderTable() {
         <tr class="${rowClass} bg-white border-b border-gray-50 transition-colors" data-id="${rec.id}">
           <td class="px-5 py-2.5 cursor-pointer" onclick="openModal(${rec.id})">
             <p class="text-[12.5px] font-semibold text-gray-900 leading-tight">${x(rec.key)}</p>
-            <p class="text-[11px] ${rec.is_sir_state ? 'text-amber-600 font-medium' : 'text-gray-400'} mt-0.5">${rec.is_sir_state ? 'SIR Priority' : 'Standard'}</p>
+            ${rec.is_sir_state ? '<p class="text-[11px] text-amber-600 font-medium mt-0.5">SIR Priority</p>' : ''}
           </td>
           <td class="px-5 py-2.5">
             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg} ${cfg.text} ${cfg.border}">
@@ -322,8 +309,7 @@ function renderTable() {
             </span>
           </td>
           <td class="px-5 py-2.5">
-            <p class="text-[12.5px] font-medium text-gray-700">${x(rec.state_name || rec.state)}</p>
-            <p class="text-[11px] text-gray-400">${x(rec.el_type)} ${rec.el_year}</p>
+            <p class="text-[12.5px] font-medium text-gray-700">${x(EL_TYPE_NAMES[String(rec.el_type).split('-')[0]] || rec.el_type)}${String(rec.el_type).includes('-BP') ? ' Bypoll' : ''} · ${rec.el_year}</p>
           </td>
           <td class="px-5 py-2.5 text-right">
             <div class="flex items-center justify-end gap-1.5">
@@ -730,14 +716,8 @@ function bindEvents() {
     renderTable(); updateSelBar();
   });
 
-  document.querySelectorAll('th.sortable').forEach(th => {
-    th.addEventListener('click', () => {
-      const col = th.dataset.col;
-      sortDir = sortCol === col && sortDir === 'asc' ? 'desc' : 'asc';
-      sortCol = col;
-      renderTable();
-    });
-  });
+  // Sortable headers are (re)bound inside renderTable() for the detail view —
+  // the static <thead> here is replaced on first render, so binding it is moot.
 
   document.getElementById('modal-close').addEventListener('click',  closeModal);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
@@ -939,8 +919,9 @@ async function loadDashboardAnalytics(forceRefresh = false) {
     const d = await res.json();
     renderRetroPanel(d.retro);
     renderCastePanel(d.caste);
-    if (d.mapping_years || d.mapping_entries) {
-      updateForm20WithMapping(d.mapping_years || 0, d.mapping_entries || 0, _f20Total, d.mapping_by_type || {});
+    if (_firstLoad) {
+      _firstLoad = false;
+      // Optionally trigger a silent background sync of Form 20 cache
     }
     if (res.status === 200) {
       analyticsLoaded = true;
@@ -1044,61 +1025,6 @@ function renderForm20Panel(stats) {
   }
 }
 
-function updateForm20WithMapping(mappingYears, mappingEntries, form20Total, mappingByType = {}) {
-  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-
-  // ── Entry-level coverage: (Form20 unique entries) / (mapping unique entries) ──
-  if (mappingEntries && form20Total) {
-    const pct  = Math.round((form20Total / mappingEntries) * 100);
-    const circ = 163.4;
-    const dash = circ * (1 - pct / 100);
-    const ring    = document.getElementById('f20-ring');
-    const ringPct = document.getElementById('f20-ring-pct');
-    if (ring)    ring.style.strokeDashoffset = dash;
-    if (ringPct) ringPct.textContent = pct + '%';
-    setEl('f20-pct',       pct + '%');
-    setEl('f20-pct-label', 'coverage');
-    setEl('f20-pct-badge', pct + '% coverage');
-    setEl('f20-counts',    `${form20Total.toLocaleString()} / ${mappingEntries.toLocaleString()} elections in Form 20`);
-  }
-
-  // ── By Election Type: re-render with 262 mapping totals as denominator ──
-  // Numerator = pipeline-completed elections (from SQLite _f20ByType)
-  // Denominator = total elections in AC-PC mapping (from RDS mapping_by_type)
-  const typeWrap = document.getElementById('f20-type-rows');
-  if (typeWrap && mappingByType && Object.keys(mappingByType).length > 0) {
-    const TYPE_META = {
-      'AE': { label: 'Assembly', bg: 'bg-gray-700'  },
-      'GE': { label: 'General',  bg: 'bg-blue-500'  },
-    };
-    const entries = Object.entries(mappingByType)
-      .filter(([t]) => !t.includes('-BP'))
-      .sort((a, b) => b[1] - a[1]);
-
-    typeWrap.innerHTML = entries.map(([type, mappingTotal]) => {
-      const pipe  = _f20ByType[type] || { completed: 0, total: 0 };
-      const done  = pipe.completed || 0;
-      const p     = mappingTotal > 0 ? Math.round((done / mappingTotal) * 100) : 0;
-      const m     = TYPE_META[type] || { label: type, bg: 'bg-gray-400' };
-      const pctColor = p === 100 ? 'text-emerald-600' : p >= 80 ? 'text-blue-600' : p >= 50 ? 'text-amber-600' : 'text-rose-500';
-      return `
-        <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1.5 w-[90px] shrink-0">
-            <span class="w-2 h-2 rounded-full ${m.bg} shrink-0"></span>
-            <span class="text-[10.5px] font-semibold text-gray-700">${type}</span>
-            <span class="text-[9.5px] text-gray-400">${m.label}</span>
-          </div>
-          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div class="h-full rounded-full ${m.bg} bar-fill" style="width:${p}%"></div>
-          </div>
-          <div class="flex items-center gap-1.5 shrink-0 justify-end whitespace-nowrap">
-            <span class="text-[11px] font-bold tabular-nums ${pctColor}">${p}%</span>
-            <span class="text-[9.5px] text-gray-400 tabular-nums">${done}/${mappingTotal}</span>
-          </div>
-        </div>`;
-    }).join('');
-  }
-}
 
 function renderRetroPanel(r) {
   if (!r || !r.available) {
@@ -1480,13 +1406,10 @@ function populateForm20Card(d) {
   setEl('hero-pipeline',     pct + '%');
   setEl('hero-pipeline-sub', `${form20.toLocaleString()} / ${acpc.toLocaleString()} elections`);
 
-  // Update globals so updateForm20WithMapping (from RDS analytics) uses correct numerator/denominator
+  // Update globals so that we keep track of accurate totals
   _f20Total = form20;
-  // Overwrite _f20ByType with ACTUAL Form 20 counts so the RDS override paints correctly too
-  _f20ByType = {};
-  Object.entries(d.by_type || {}).forEach(([type, td]) => {
-    _f20ByType[type] = { completed: td.in_form20 || 0, total: td.in_form20 || 0 };
-  });
+  
+
 
   // ── By election type breakdown ─────────────────────────────────────────────
   const typeWrap = document.getElementById('f20-type-rows');
@@ -1515,9 +1438,9 @@ function populateForm20Card(d) {
           <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div class="h-full rounded-full ${m.bg} bar-fill" style="width:${p}%"></div>
           </div>
-          <div class="flex items-center gap-1 shrink-0 w-[72px] justify-end">
+          <div class="flex items-center gap-1.5 shrink-0 justify-end whitespace-nowrap">
             <span class="text-[11px] font-bold tabular-nums ${pctColor}">${p}%</span>
-            <span class="text-[9.5px] text-gray-400 tabular-nums">${done}/${mapTot}</span>
+            <span class="text-[9.5px] text-gray-400 tabular-nums">${done.toLocaleString()}/${mapTot.toLocaleString()}</span>
           </div>
         </div>`;
     }).join('');
