@@ -1721,8 +1721,9 @@ function renderGlanceAnalytics(glance, allWeeks, allRecords, weekRecords) {
   const setT = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
   // ── Summary stat cards ──────────────────────────────────────────────────
-  setT('glance-stat-total',     total.toLocaleString());
-  setT('glance-stat-total-sub', total === 1 ? 'record in database' : 'records in database');
+  const last4WeeksTotal = Object.values(weekly).reduce((a, b) => a + b, 0);
+  setT('glance-stat-total',     last4WeeksTotal.toLocaleString());
+  setT('glance-stat-total-sub', last4WeeksTotal === 1 ? 'record in last 4 weeks' : 'records in last 4 weeks');
   setT('glance-stat-thisweek',  thisWeek);
   setT('glance-stat-avg',       activeWeeks ? (total / activeWeeks).toFixed(1) : '0');
   setT('glance-stat-weeks',     `over ${activeWeeks} active week${activeWeeks === 1 ? '' : 's'}`);
