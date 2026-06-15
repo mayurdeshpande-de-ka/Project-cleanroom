@@ -465,6 +465,57 @@ def get_live_extracted_set():
     except Exception:
         return set()
 
+# On-disk snapshots used as a fallback when the RDS form20_summary_view /
+# ac_election_mapping queries are too slow to answer on-demand (the live view
+# can take minutes to scan). These files hold the same {state, el_type, el_year}
+# records as the 'live'/'acpc' caches and let the Form 20 card render real
+# numbers even when the RDS refresh hasn't completed.
+LIVE_EXTRACTED_JSON_PATH = os.path.join(BASE_DIR, 'live_extracted.json')
+ACPC_EXTRACTED_JSON_PATH = os.path.join(BASE_DIR, 'ac_pc_extracted.json')
+
+def _load_json_list(path):
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def get_ac_coverage_totals():
+    """AC-wise (form20_acs, mapping_acs) totals — same metric as the Form 20
+    card's coverage ring, so the Listing page progress bar agrees with it.
+    Prefers the live RDS-derived AC counts, falling back to the on-disk
+    election snapshots × each state's AC count when RDS hasn't refreshed yet."""
+    form20_ac_counts = cache_get('form20_ac_counts') or {}
+    acpc_ac_counts = cache_get('acpc_ac_counts') or {}
+
+    if not form20_ac_counts or not acpc_ac_counts:
+        raw = cache_get('live') or _load_json_list(LIVE_EXTRACTED_JSON_PATH)
+        raw2 = cache_get('acpc') or _load_json_list(ACPC_EXTRACTED_JSON_PATH)
+
+        form20_set, acpc_set = set(), set()
+        for item in raw:
+            state, el_type, el_year = str(item.get('state', '')).strip(), str(item.get('el_type', '')).strip(), str(item.get('el_year', '')).strip()
+            if state and el_type and el_year and '-BP' not in el_type:
+                form20_set.add((state, el_type, el_year))
+        for item in raw2:
+            state, el_type, el_year = str(item.get('state', '')).strip(), str(item.get('el_type', '')).strip(), str(item.get('el_year', '')).strip()
+            if state and el_type and el_year and '-BP' not in el_type:
+                acpc_set.add((state, el_type, el_year))
+
+        form20_ac_counts = {}
+        for state, _, _ in form20_set:
+            form20_ac_counts[state] = form20_ac_counts.get(state, 0) + STATE_AC_COUNTS.get(state, 0)
+        acpc_ac_counts = {}
+        for state, _, _ in acpc_set:
+            acpc_ac_counts[state] = acpc_ac_counts.get(state, 0) + STATE_AC_COUNTS.get(state, 0)
+
+    return sum(form20_ac_counts.values()), sum(acpc_ac_counts.values())
+
+
 DOWNLOAD_JSON_PATH = os.path.join(BASE_DIR, 'download_report.json')
 
 def get_download_report_dict():
@@ -795,6 +846,13 @@ def get_stats():
     if history.pop('_updated', False):
         save_completion_history(history)
 
+    form20_acs, mapping_acs = get_ac_coverage_totals()
+    ac_coverage = {
+        'form20_acs':  form20_acs,
+        'mapping_acs': mapping_acs,
+        'pct': round((form20_acs / mapping_acs) * 100) if mapping_acs else 0,
+    }
+
     return jsonify({
         'total': total,
         'by_status': by_status,
@@ -806,6 +864,7 @@ def get_stats():
         'total_years': total_years,
         'years_in_db': years_in_db,
         'year_detail': sorted(year_dict.items()),
+        'ac_coverage': ac_coverage,
     })
 
 
@@ -836,6 +895,7 @@ def glance_report():
     records_by_week  = {}
     monthly_counts = {}
     records_by_month = {}
+    all_filtered_records = []
 
     today = datetime.now().date()
     cur_week_start = today - timedelta(days=today.weekday())
@@ -874,6 +934,8 @@ def glance_report():
             continue
 
 
+        all_filtered_records.append({'key': key, 'date': date_str})
+
         # Weekly bucket
         sw = d - timedelta(days=d.weekday())
         ew = sw + timedelta(days=6)
@@ -902,12 +964,23 @@ def glance_report():
         weekly_counts.setdefault(w, 0)
         records_by_week.setdefault(w, [])
 
-    # We only send ONE week to 'all_weeks' to ensure tables/charts reflect only the selected week
+    # all_weeks[0] = selected/current week, all_weeks[1] = the week before it
+    # (used by the "Last Week vs This Week" comparison on the Glance page)
+    prev_week_start = effective_week_start - timedelta(days=7)
+    prev_week_label = f"{prev_week_start.strftime('%Y-%m-%d')} to {(prev_week_start + timedelta(days=6)).strftime('%Y-%m-%d')}"
+    weekly_counts.setdefault(prev_week_label, 0)
+    records_by_week.setdefault(prev_week_label, [])
+
     all_weeks = [{
         'week': effective_week_label,
         'count': weekly_counts[effective_week_label],
         'is_current': effective_week_label == cur_week_label,
         'records': sorted(records_by_week[effective_week_label], key=lambda x: x['date'], reverse=True)
+    }, {
+        'week': prev_week_label,
+        'count': weekly_counts[prev_week_label],
+        'is_current': False,
+        'records': sorted(records_by_week[prev_week_label], key=lambda x: x['date'], reverse=True)
     }]
 
     # Compute 4-week trend per state for the sparkbars
@@ -1003,6 +1076,7 @@ def glance_report():
         'all_weekly_counts': {w: all_time_weekly[w] for w in all_time_sorted},  # full history (velocity chart)
         'monthly_counts':    {m: monthly_counts[m] for m in sorted_months},
         'all_weeks':         all_weeks,
+        'all_records':       sorted(all_filtered_records, key=lambda x: x['date'], reverse=True),
         'trend_4_weeks':     trend_4_weeks,
         'trend_weeks_labels': trend_weeks_labels,
         'current_week':      effective_cur_week,   # selected week label when filtered
@@ -1017,546 +1091,6 @@ def glance_report():
     })
 
 
-
-_pdf_lock = threading.Lock()
-
-
-@app.route('/api/glance_report/pdf')
-def glance_report_pdf():
-    """Two-page management PDF:
-       Page 1 — Executive summary + push velocity + pipeline status + analysis.
-       Page 2 — State × Year completed elections detail table.
-    """
-    import io
-    from collections import Counter
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-    from matplotlib.patches import FancyBboxPatch
-    from matplotlib.backends.backend_pdf import PdfPages
-
-    state_f = request.args.get('state', '').strip()
-    type_f  = request.args.get('el_type', '').strip()
-    out_fmt = 'png' if request.args.get('fmt', '').lower() == 'png' else 'pdf'
-
-    # ── 1. Completion-history data ────────────────────────────────────────────
-    history = get_completion_history()
-    history.pop('_updated', None)
-
-    recs = []
-    for key, date_str in history.items():
-        try:
-            d = datetime.strptime(date_str, '%Y-%m-%d').date()
-        except Exception:
-            continue
-        parts = key.split('-')
-        st = parts[0] if parts else ''
-        yr = parts[-1] if len(parts) >= 2 else ''
-        ty = '-'.join(parts[1:-1]) if len(parts) >= 3 else ''
-        # BP filter
-        if '-BP' in ty: continue
-        if state_f and st != state_f: continue
-        if type_f  and ty != type_f:  continue
-        recs.append({'key': key, 'date': date_str, 'd': d, 'state': st, 'type': ty, 'year': yr})
-
-    today      = datetime.now().date()
-    cur_start  = today - timedelta(days=today.weekday())
-    cur_end    = cur_start + timedelta(days=6)
-    last_start = cur_start - timedelta(days=7)
-    last_end   = last_start + timedelta(days=6)
-
-    def wstart(d): return d - timedelta(days=d.weekday())
-
-    weekly_all = {}
-    for r in recs:
-        ws = wstart(r['d'])
-        weekly_all[ws] = weekly_all.get(ws, 0) + 1
-    all_weeks_sorted = sorted(weekly_all.keys())
-
-    last4 = all_weeks_sorted[-4:] if len(all_weeks_sorted) >= 4 else all_weeks_sorted
-
-    this_week_recs = [r for r in recs if cur_start <= r['d'] <= cur_end]
-    this_week  = len(this_week_recs)
-    last_week  = sum(1 for r in recs if last_start <= r['d'] <= last_end)
-    total      = len(recs)
-    avg        = (total / len(all_weeks_sorted)) if all_weeks_sorted else 0
-
-    if this_week_recs:
-        f_start, f_end = cur_start, cur_end; f_label = 'This Week'
-    elif all_weeks_sorted:
-        fs = all_weeks_sorted[-1]; f_start, f_end = fs, fs + timedelta(days=6); f_label = 'Latest Active Week'
-    else:
-        f_start, f_end = cur_start, cur_end; f_label = 'This Week'
-
-    # Records in the focus period (latest active week)
-    focus_recs = sorted([r for r in recs if f_start <= r['d'] <= f_end], key=lambda x: x['date'])
-
-    state_counts = Counter(r['state'] for r in recs)
-    type_counts  = Counter(r['type']  for r in recs)
-
-    # ── 2. Pipeline status from SQLite ───────────────────────────────────────
-    try:
-        conn = get_db()
-        all_db_recs = conn.execute(
-            "SELECT overall_status, COUNT(*) c FROM records WHERE el_type NOT LIKE '%-BP' GROUP BY overall_status"
-        ).fetchall()
-        conn.close()
-        by_status = {dict(r)['overall_status']: dict(r)['c'] for r in all_db_recs}
-    except Exception:
-        by_status = {}
-    db_total      = sum(by_status.values())
-    db_pushed     = by_status.get('db_pushed', 0) + by_status.get('completed', 0)
-    db_downloaded = by_status.get('downloaded', 0)
-    db_extracted  = by_status.get('extracted', 0)
-    db_missing    = by_status.get('missing', 0)
-    db_pct        = round(db_pushed / db_total * 100) if db_total else 0
-
-    # ── 3. Monthly trend ─────────────────────────────────────────────────────
-    monthly = {}
-    for r in recs:
-        ml = r['d'].strftime('%Y-%m')
-        monthly[ml] = monthly.get(ml, 0) + 1
-    sorted_months = sorted(monthly.keys())
-
-    # ── Colour palette ────────────────────────────────────────────────────────
-    INDIGO    = '#6366f1'
-    EMERALD   = '#10b981'
-    AMBER     = '#f59e0b'
-    BLUE      = '#3b82f6'
-    RED       = '#ef4444'
-    VIOLET    = '#7c3aed'
-    DARK      = '#0f172a'
-    SLATE     = '#1e293b'
-    GRAY      = '#64748b'
-    MUTED     = '#94a3b8'
-    LIGHT     = '#cbd5e1'
-    BORDER    = '#e2e8f0'
-    BG_LIGHT  = '#f8fafc'
-    BG_CARD   = '#f1f5f9'
-    TYPE_COL  = {'AE': INDIGO, 'GE': BLUE}
-
-    STATE_NAMES = {
-        'AP':'Andhra Pradesh','AR':'Arunachal Pradesh','AS':'Assam','BR':'Bihar',
-        'CG':'Chhattisgarh','CT':'Chhattisgarh','GA':'Goa','GJ':'Gujarat','HR':'Haryana',
-        'HP':'Himachal Pradesh','JH':'Jharkhand','KA':'Karnataka','KL':'Kerala',
-        'MP':'Madhya Pradesh','MH':'Maharashtra','MN':'Manipur','ML':'Meghalaya',
-        'MZ':'Mizoram','NL':'Nagaland','OR':'Odisha','PB':'Punjab','RJ':'Rajasthan',
-        'SK':'Sikkim','TN':'Tamil Nadu','TR':'Tripura','UP':'Uttar Pradesh',
-        'UK':'Uttarakhand','WB':'West Bengal','TS':'Telangana','DL':'Delhi',
-        'JK':'Jammu & Kashmir','LA':'Ladakh','AN':'Andaman & Nicobar',
-        'CH':'Chandigarh','PY':'Puducherry','LD':'Lakshadweep',
-    }
-
-    def _style_ax(ax, title):
-        ax.set_title(title, fontsize=8.5, fontweight='bold', color=DARK, loc='left', pad=5)
-        for sp in ['top', 'right']:
-            ax.spines[sp].set_visible(False)
-        ax.spines['left'].set_color(BORDER)
-        ax.spines['bottom'].set_color(BORDER)
-        ax.tick_params(colors=GRAY, labelsize=7)
-
-    def _header_band(fig, y_bottom, height, title, subtitle=None, right_line1=None, right_line2=None):
-        """Draw a dark header band spanning the full figure width."""
-        ax = fig.add_axes([0, y_bottom, 1, height])
-        ax.set_facecolor(SLATE)
-        ax.axis('off')
-        # left accent stripe
-        ax.add_patch(mpatches.Rectangle((0, 0), 0.006, 1, facecolor=EMERALD,
-                                        transform=ax.transAxes, clip_on=True))
-        ax.text(0.025, 0.72, 'PROJECT CLEAN ROOM', fontsize=7, fontweight='bold',
-                color=MUTED, transform=ax.transAxes, va='center', family='monospace')
-        ax.text(0.025, 0.28, title, fontsize=13, fontweight='bold',
-                color='white', transform=ax.transAxes, va='center')
-        if subtitle:
-            ax.text(0.025 + 0.38, 0.28, subtitle, fontsize=9, color=LIGHT,
-                    transform=ax.transAxes, va='center')
-        if right_line1:
-            ax.text(0.98, 0.70, right_line1, fontsize=7.5, color=MUTED,
-                    transform=ax.transAxes, ha='right', va='center')
-        if right_line2:
-            ax.text(0.98, 0.28, right_line2, fontsize=8.5, color=LIGHT,
-                    transform=ax.transAxes, ha='right', va='center')
-
-    def _footer_band(fig, page_label, gen_ts):
-        ax = fig.add_axes([0, 0, 1, 0.030])
-        ax.set_facecolor(BG_LIGHT)
-        ax.axis('off')
-        ax.axhline(y=1.0, color=BORDER, lw=0.8)
-        ax.text(0.05, 0.45, 'Project Clean Room  ·  Confidential — Internal Use Only',
-                fontsize=7, color=MUTED, transform=ax.transAxes, va='center')
-        ax.text(0.95, 0.45, f'{page_label}  ·  {gen_ts}',
-                fontsize=7, color=MUTED, transform=ax.transAxes, ha='right', va='center')
-
-    def _exec_kpi(fig, x, y, w, h, label, value, color, sub=None):
-        """Large executive KPI card."""
-        ax = fig.add_axes([x, y, w, h])
-        ax.axis('off')
-        # card background
-        ax.add_patch(FancyBboxPatch((0.04, 0.04), 0.92, 0.92,
-            boxstyle='round,pad=0.02,rounding_size=0.05',
-            facecolor='white', edgecolor=BORDER, lw=0.9,
-            transform=ax.transAxes, clip_on=True))
-        # top accent bar
-        ax.add_patch(mpatches.Rectangle((0.04, 0.86), 0.92, 0.1,
-            facecolor=color, alpha=0.12, transform=ax.transAxes, clip_on=True))
-        ax.add_patch(mpatches.Rectangle((0.04, 0.86), 0.14, 0.1,
-            facecolor=color, transform=ax.transAxes, clip_on=True))
-        ax.text(0.50, 0.62, str(value), ha='center', va='center',
-                fontsize=18, color=color, fontweight='black',
-                transform=ax.transAxes)
-        ax.text(0.50, 0.32, label, ha='center', va='center',
-                fontsize=6.5, color=GRAY, fontweight='bold',
-                transform=ax.transAxes)
-        if sub:
-            ax.text(0.50, 0.14, sub, ha='center', va='center',
-                    fontsize=6, color=MUTED, transform=ax.transAxes)
-
-    def _mini_kpi(fig, x, y, w, h, label, value, color, sub=None):
-        """Smaller pipeline-stage KPI card."""
-        ax = fig.add_axes([x, y, w, h])
-        ax.axis('off')
-        ax.add_patch(FancyBboxPatch((0.03, 0.03), 0.94, 0.94,
-            boxstyle='round,pad=0.02,rounding_size=0.05',
-            facecolor=BG_CARD, edgecolor=BORDER, lw=0.7,
-            transform=ax.transAxes, clip_on=True))
-        # left accent
-        ax.add_patch(mpatches.Rectangle((0.03, 0.03), 0.055, 0.94,
-            facecolor=color, transform=ax.transAxes, clip_on=True))
-        ax.text(0.55, 0.72, label, ha='center', va='center',
-                fontsize=6, color=GRAY, fontweight='bold', transform=ax.transAxes)
-        ax.text(0.55, 0.38, str(value), ha='center', va='center',
-                fontsize=13, color=color, fontweight='black', transform=ax.transAxes)
-        if sub:
-            ax.text(0.55, 0.12, sub, ha='center', va='center',
-                    fontsize=5.5, color=MUTED, transform=ax.transAxes)
-
-    with _pdf_lock:
-        buf = io.BytesIO()
-        gen_ts  = datetime.now().strftime('%d %b %Y, %H:%M')
-        wk_str  = f'{f_start.strftime("%d %b")} – {f_end.strftime("%d %b %Y")}'
-        filt_str = ', '.join(
-            (['State: ' + state_f] if state_f else []) +
-            (['Type: ' + type_f]   if type_f  else [])
-        )
-
-        with PdfPages(buf) as pdf:
-
-            # ══════════════════════════════════════════════════════════════════
-            # PAGE 1
-            # ══════════════════════════════════════════════════════════════════
-            fig1 = plt.figure(figsize=(8.27, 11.69))
-            fig1.patch.set_facecolor('white')
-
-            # ── Header band ───────────────────────────────────────────────────
-            _header_band(fig1, 0.934, 0.066,
-                         title='Weekly Report',
-                         subtitle='DB Push Analytics',
-                         right_line1='Generated ' + gen_ts,
-                         right_line2=('Period: ' + wk_str) + (('  |  ' + filt_str) if filt_str else ''))
-
-            # ── A. Executive summary KPIs (4 large cards) ────────────────────
-            diff  = this_week - last_week
-            diff_str = ('+' if diff >= 0 else '') + str(diff)
-            diff_col = EMERALD if diff > 0 else (RED if diff < 0 else GRAY)
-
-            fig1.text(0.055, 0.913, 'EXECUTIVE SUMMARY', fontsize=7,
-                      fontweight='bold', color=MUTED)
-            EW = 0.198; EH = 0.072; EY = 0.832; GAP = 0.014
-            exec_kpis = [
-                ('CUMULATIVE PUSHED', total,         EMERALD, 'all-time records'),
-                ('THIS WEEK',         this_week,     INDIGO,  f_label),
-                ('WoW CHANGE',        diff_str,      diff_col,'vs previous week'),
-                ('STATES ACTIVE',     len(state_counts), BLUE,'states with pushes'),
-            ]
-            for i, (lbl, val, col, sub) in enumerate(exec_kpis):
-                _exec_kpi(fig1, 0.055 + i * (EW + GAP), EY, EW, EH, lbl, val, col, sub)
-
-            # ── B. Weekly push velocity chart ────────────────────────────────
-            fig1.text(0.055, 0.820, 'WEEKLY PUSH VELOCITY', fontsize=7,
-                      fontweight='bold', color=MUTED)
-            ax_wv = fig1.add_axes([0.055, 0.695, 0.595, 0.108])
-            _style_ax(ax_wv, 'DB Push Count — Last 4 Weeks')
-            if last4:
-                w4_vals = [weekly_all[w] for w in last4]
-                w4_lbls = [w.strftime('%d %b') for w in last4]
-                w4_cols = [EMERALD if w == wstart(today) else '#818cf8' for w in last4]
-                bars = ax_wv.bar(w4_lbls, w4_vals, color=w4_cols, width=0.5,
-                                  edgecolor='white', linewidth=0.5)
-                ax_wv.set_ylim(0, max(w4_vals) * 1.35 + 1)
-                for xi, (bar, v) in enumerate(zip(bars, w4_vals)):
-                    ax_wv.text(xi, v + ax_wv.get_ylim()[1] * 0.02, str(v),
-                               ha='center', va='bottom', fontsize=9,
-                               color=DARK, fontweight='bold')
-                # current week label
-                try:
-                    cw_idx = [w == wstart(today) for w in last4].index(True)
-                    ax_wv.text(cw_idx, -ax_wv.get_ylim()[1] * 0.12, 'Current',
-                               ha='center', va='top', fontsize=6.5,
-                               color=EMERALD, fontweight='bold')
-                except ValueError:
-                    pass
-            else:
-                ax_wv.axis('off')
-                ax_wv.text(0.5, 0.5, 'No data yet', ha='center', color=MUTED, fontsize=9)
-
-            # WoW chip beside velocity chart
-            ax_wow = fig1.add_axes([0.680, 0.695, 0.265, 0.108])
-            ax_wow.axis('off')
-            ax_wow.set_title('Week-over-Week', fontsize=8.5, fontweight='bold',
-                             color=DARK, loc='left', pad=5)
-            wow_items = [
-                ('This week',  this_week, INDIGO),
-                ('Last week',  last_week, GRAY),
-                ('Change',     diff_str,  diff_col),
-                ('Weekly avg', f'{avg:.1f}', AMBER),
-            ]
-            for j, (lbl, val, col) in enumerate(wow_items):
-                yy = 0.78 - j * 0.22
-                ax_wow.text(0.0, yy, lbl, va='center', fontsize=8, color='#475569')
-                ax_wow.text(0.80, yy, str(val), va='center', ha='right',
-                            fontsize=9, fontweight='bold', color=col)
-
-            # ── C. Pipeline status (5 mini cards) ────────────────────────────
-            fig1.add_artist(plt.Line2D([0.055, 0.945], [0.688, 0.688],
-                                       color=BORDER, lw=0.6))
-            fig1.text(0.055, 0.677, 'FORM 20 PIPELINE STATUS', fontsize=7,
-                      fontweight='bold', color=MUTED)
-            MW = (0.890 - 0.044) / 5; MH = 0.057; MY = 0.610; MG = 0.011
-            mini_kpis = [
-                ('TOTAL TRACKED', db_total,      DARK,    None),
-                ('DB PUSHED',     db_pushed,      EMERALD, f'{db_pct}% complete'),
-                ('DOWNLOADED',    db_downloaded,  BLUE,    'Awaiting extraction'),
-                ('EXTRACTED',     db_extracted,   VIOLET,  'Awaiting DB push'),
-                ('REMAINING',       db_missing,     RED,     'Not yet downloaded'),
-            ]
-            for i, (lbl, val, col, sub) in enumerate(mini_kpis):
-                _mini_kpi(fig1, 0.055 + i * (MW + MG), MY, MW, MH, lbl, val, col, sub)
-
-            # ── D. Monthly trend + State performance ──────────────────────────
-            fig1.add_artist(plt.Line2D([0.055, 0.945], [0.604, 0.604],
-                                       color=BORDER, lw=0.6))
-            fig1.text(0.055, 0.593, 'DETAILED ANALYSIS', fontsize=7,
-                      fontweight='bold', color=MUTED)
-
-            ax_mon = fig1.add_axes([0.055, 0.455, 0.53, 0.115])
-            _style_ax(ax_mon, 'Monthly DB Push Trend')
-            if sorted_months:
-                mlbls = [m[5:] for m in sorted_months]
-                mvals = [monthly[m] for m in sorted_months]
-                max_m = max(mvals)
-                bar_cols_m = [EMERALD if v == max_m else INDIGO for v in mvals]
-                ax_mon.bar(mlbls, mvals, color=bar_cols_m, width=0.65,
-                           edgecolor='white', linewidth=0.5)
-                ax_mon.set_ylim(0, max_m * 1.3 + 1)
-                for xi, v in enumerate(mvals):
-                    if v:
-                        ax_mon.text(xi, v, str(v), ha='center', va='bottom',
-                                    fontsize=6.5, color=DARK, fontweight='bold')
-            else:
-                ax_mon.axis('off')
-                ax_mon.text(0.5, 0.5, 'No data yet', ha='center', color=MUTED, fontsize=9)
-
-            ax_sp = fig1.add_axes([0.650, 0.455, 0.295, 0.115])
-            _style_ax(ax_sp, 'State Performance (Top 8)')
-            top_s = state_counts.most_common(8)[::-1]
-            if top_s:
-                bars_sp = ax_sp.barh([s for s, _ in top_s],
-                                     [c for _, c in top_s],
-                                     color=EMERALD, height=0.55,
-                                     edgecolor='white', linewidth=0.3)
-                for ii, (s, c) in enumerate(top_s):
-                    ax_sp.text(c + 0.05, ii, str(c), va='center',
-                               fontsize=7, color=DARK, fontweight='bold')
-                ax_sp.set_xlim(0, max(c for _, c in top_s) * 1.25)
-            else:
-                ax_sp.axis('off')
-                ax_sp.text(0.5, 0.5, 'No data yet', ha='center', color=MUTED, fontsize=9)
-
-            # ── E. Election type distribution ────────────────────────────────
-            fig1.add_artist(plt.Line2D([0.055, 0.945], [0.450, 0.450],
-                                       color='#f1f5f9', lw=0.5))
-            ax_et = fig1.add_axes([0.055, 0.340, 0.890, 0.090])
-            ax_et.axis('off')
-            ax_et.set_title('Completed by Election Type', fontsize=8.5,
-                            fontweight='bold', color=DARK, loc='left', pad=5)
-            top_t = type_counts.most_common()
-            if top_t:
-                n_types = len(top_t)
-                barw = 0.86 / max(n_types, 1)
-                max_cnt = max(c for _, c in top_t)
-                for ii, (ty, cnt) in enumerate(top_t):
-                    col = TYPE_COL.get(ty, GRAY)
-                    pct_t = cnt / total * 100 if total else 0
-                    bx = ii * barw
-                    # bar background
-                    ax_et.add_patch(mpatches.Rectangle(
-                        (bx + 0.01, 0.30), barw * 0.88, 0.25,
-                        facecolor=BORDER, transform=ax_et.transAxes, clip_on=True))
-                    # fill
-                    ax_et.add_patch(mpatches.Rectangle(
-                        (bx + 0.01, 0.30), barw * 0.88 * cnt / max_cnt, 0.25,
-                        facecolor=col, transform=ax_et.transAxes, clip_on=True))
-                    ax_et.text(bx + 0.01, 0.76, ty,
-                               fontsize=9, fontweight='bold', color=col,
-                               transform=ax_et.transAxes)
-                    ax_et.text(bx + 0.01, 0.10,
-                               f'{cnt} records  ({pct_t:.0f}%)',
-                               fontsize=7.5, color=GRAY, transform=ax_et.transAxes)
-                ax_et.set_xlim(0, 1)
-                ax_et.set_ylim(0, 1)
-            else:
-                ax_et.text(0.5, 0.5, 'No data yet', ha='center', va='center',
-                           color=MUTED, fontsize=9)
-
-            # ── F. Elections pushed this period ───────────────────────────────
-            fig1.add_artist(plt.Line2D([0.055, 0.945], [0.332, 0.332],
-                                       color=BORDER, lw=0.6))
-            period_hdr = (f'ELECTIONS PUSHED — {f_label.upper()}'
-                          f'  ({len(focus_recs)} election{"s" if len(focus_recs) != 1 else ""})')
-            fig1.text(0.055, 0.320, period_hdr, fontsize=7, fontweight='bold', color=MUTED)
-
-            ax_pw = fig1.add_axes([0.055, 0.048, 0.890, 0.260])
-            ax_pw.axis('off')
-            ax_pw.set_title(
-                f'{f_start.strftime("%d %b")} – {f_end.strftime("%d %b %Y")}',
-                fontsize=9, fontweight='bold', color=DARK, loc='left', pad=5
-            )
-
-            if focus_recs:
-                pw_rows = []
-                for r in focus_recs:
-                    sname = STATE_NAMES.get(r['state'], r['state'])
-                    d_fmt = datetime.strptime(r['date'], '%Y-%m-%d').strftime('%d %b %Y')
-                    pw_rows.append([r['state'], sname, r['type'], r['year'], d_fmt])
-
-                col_labels_pw = ['Code', 'State Name', 'Type', 'Year', 'Date Pushed']
-                col_widths_pw = [0.07, 0.31, 0.10, 0.09, 0.15]
-
-                tab_pw = ax_pw.table(
-                    cellText=pw_rows,
-                    colLabels=col_labels_pw,
-                    cellLoc='left',
-                    loc='upper center',
-                    colWidths=col_widths_pw,
-                )
-                tab_pw.auto_set_font_size(False)
-                tab_pw.set_fontsize(9)
-                tab_pw.scale(1, 1.55)
-
-                for (row, col), cell in tab_pw.get_celld().items():
-                    cell.set_edgecolor(BORDER)
-                    if row == 0:
-                        cell.set_facecolor(EMERALD)
-                        cell.set_text_props(color='white', fontweight='bold', fontsize=8.5)
-                    else:
-                        pw_r = pw_rows[row - 1]
-                        ty_col = TYPE_COL.get(pw_r[2], GRAY)
-                        cell.set_facecolor('#f0fdf4' if row % 2 == 0 else 'white')
-                        if col == 2:   # Type column — color by AE/GE
-                            cell.set_text_props(color=ty_col, fontweight='bold')
-                        if col == 0:   # State code — bold
-                            cell.set_text_props(fontweight='bold')
-            else:
-                ax_pw.text(0.5, 0.5, 'No elections pushed this period.',
-                           ha='center', va='center', fontsize=10, color=MUTED)
-
-            # ── Footer ────────────────────────────────────────────────────────
-            _footer_band(fig1, 'Page 1 of 2', gen_ts)
-
-            pdf.savefig(fig1, facecolor='white', bbox_inches='tight')
-            plt.close(fig1)
-
-            # ══════════════════════════════════════════════════════════════════
-            # PAGE 2 — State × Year completed elections detail table
-            # ══════════════════════════════════════════════════════════════════
-            fig2 = plt.figure(figsize=(8.27, 11.69))
-            fig2.patch.set_facecolor('white')
-
-            _header_band(fig2, 0.934, 0.066,
-                         title='State-wise Completion Detail',
-                         subtitle='All DB-pushed elections',
-                         right_line1='Generated ' + gen_ts,
-                         right_line2=wk_str)
-
-            state_map = {}
-            for r in recs:
-                st, ty, yr = r['state'], r['type'], r['year']
-                if st not in state_map: state_map[st] = {}
-                if ty not in state_map[st]: state_map[st][ty] = set()
-                state_map[st][ty].add(yr)
-
-            sorted_states = sorted(state_map.keys())
-
-            ax_t = fig2.add_axes([0.055, 0.060, 0.890, 0.860])
-            ax_t.axis('off')
-            ax_t.set_title(
-                f'{len(sorted_states)} states  ·  {total} elections DB-pushed',
-                fontsize=9.5, fontweight='bold', color=DARK, loc='left', pad=10
-            )
-
-            if sorted_states:
-                rows_data = []
-                for st in sorted_states:
-                    name = STATE_NAMES.get(st, st)
-                    type_strs = []
-                    for ty in sorted(state_map[st].keys()):
-                        years = ', '.join(sorted(state_map[st][ty]))
-                        type_strs.append(f'{ty}: {years}')
-                    elections_str = '  |  '.join(type_strs)
-                    total_r = sum(len(v) for v in state_map[st].values())
-                    rows_data.append([st, name, elections_str, str(total_r)])
-
-                col_labels  = ['Code', 'State Name', 'Completed Elections (Type: Years)', 'Count']
-                col_widths  = [0.055, 0.175, 0.640, 0.075]
-
-                tab = ax_t.table(
-                    cellText=rows_data,
-                    colLabels=col_labels,
-                    cellLoc='left',
-                    loc='upper center',
-                    colWidths=col_widths,
-                )
-                tab.auto_set_font_size(False)
-                tab.set_fontsize(8)
-                tab.scale(1, 1.5)
-
-                for (row, col), cell in tab.get_celld().items():
-                    cell.set_edgecolor(BORDER)
-                    if row == 0:
-                        cell.set_facecolor(SLATE)
-                        cell.set_text_props(color='white', fontweight='bold', fontsize=8)
-                    elif row % 2 == 0:
-                        cell.set_facecolor('#f8fafc')
-                    else:
-                        cell.set_facecolor('white')
-                    if col == 3:
-                        cell.set_text_props(ha='right')
-                    if col == 0:
-                        cell.set_text_props(fontweight='bold', color=SLATE if row > 0 else 'white')
-            else:
-                ax_t.text(0.5, 0.6,
-                          'No DB-pushed records yet.\nRecords appear here once elections are marked as DB Pushed.',
-                          ha='center', va='center', fontsize=11, color=MUTED, linespacing=1.8)
-
-            _footer_band(fig2, 'Page 2 of 2', gen_ts)
-
-            pdf.savefig(fig2, facecolor='white', bbox_inches='tight')
-            plt.close(fig2)
-
-    buf.seek(0)
-    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    if out_fmt == 'png':
-        import fitz
-        buf2 = io.BytesIO(buf.read())
-        doc = fitz.open(stream=buf2, filetype='pdf')
-        pix = doc[0].get_pixmap(dpi=150)
-        png_buf = io.BytesIO(pix.tobytes('png'))
-        png_buf.seek(0)
-        return send_file(png_buf, mimetype='image/png')
-
-    return send_file(buf, mimetype='application/pdf', as_attachment=True,
-                     download_name=f'Weekly_Report_{f_start.strftime("%Y%m%d")}_{ts}.pdf')
 
 
 def _sanitize_db_err(err):
@@ -1638,15 +1172,25 @@ def build_analytics_cache():
             years_seen   = set()
             cov_by_type  = {}      # el_type -> [total_elections, available_elections]
             cov_by_state = {}      # state   -> [total_elections, available_elections]
+            # AC-wise versions (same metric as the Form 20 panel): each (state,
+            # year, type) triplet contributes the state's AC count instead of 1.
+            cov_by_type_ac  = {}   # el_type -> [total_acs, available_acs]
+            cov_by_state_ac = {}   # state   -> [total_acs, available_acs]
             n_total = n_avail = 0
+            n_total_ac = n_avail_ac = 0
             for st, yr, ty in rows_e:
                 s = str(st).strip(); y = str(yr).strip(); t = str(ty).strip()
+                acs = STATE_AC_COUNTS.get(s, 0)
                 years_seen.add(y)
                 n_total += 1
+                n_total_ac += acs
                 cbt = cov_by_type.setdefault(t, [0, 0]);  cbt[0] += 1
                 cbs = cov_by_state.setdefault(s, [0, 0]); cbs[0] += 1
+                cbt_ac = cov_by_type_ac.setdefault(t, [0, 0]);  cbt_ac[0] += acs
+                cbs_ac = cov_by_state_ac.setdefault(s, [0, 0]); cbs_ac[0] += acs
                 if (s, y, t) in avail:
                     n_avail += 1; cbt[1] += 1; cbs[1] += 1
+                    n_avail_ac += acs; cbt_ac[1] += acs; cbs_ac[1] += acs
             result['retro'] = {
                 'available': True,
                 'ac_total':     n_total,    # unique elections expected (mapping)
@@ -1659,6 +1203,19 @@ def build_analytics_cache():
                     {'state': s, 'expected': v[0], 'available': v[1],
                      'pct': round(100.0 * v[1] / v[0], 1) if v[0] else 0.0}
                     for s, v in sorted(cov_by_state.items(), key=lambda kv: -kv[1][1])[:8]
+                ],
+                # AC-wise totals + breakdowns — mirrors the Form 20 panel's metric
+                'total_acs':     n_total_ac,
+                'available_acs': n_avail_ac,
+                'coverage_pct_acs': round((n_avail_ac / n_total_ac) * 100) if n_total_ac else 0,
+                'by_type_acs': [
+                    {'type': t, 'total': v[0], 'available': v[1]}
+                    for t, v in sorted(cov_by_type_ac.items(), key=lambda kv: -kv[1][0])
+                ],
+                'top_states_acs': [
+                    {'state': s, 'expected': v[0], 'available': v[1],
+                     'pct': round(100.0 * v[1] / v[0]) if v[0] else 0}
+                    for s, v in sorted(cov_by_state_ac.items(), key=lambda kv: -kv[1][1])[:8]
                 ],
             }
             result['mapping_years']   = len(years_seen)
@@ -1692,14 +1249,34 @@ def build_analytics_cache():
             ''')
             rows3, _ = _rds_query(cur, '''
                 SELECT state_abb, COUNT(DISTINCT ac_no)
-                FROM caste_details GROUP BY state_abb ORDER BY 2 DESC LIMIT 10
+                FROM caste_details GROUP BY state_abb ORDER BY 2 DESC
             ''')
+
+            # AC-wise per-state progress: caste-covered ACs out of each state's
+            # total ACs (STATE_AC_COUNTS), so the UI can mirror the Form 20
+            # per-state progress bars. Includes states with zero coverage.
+            covered_by_state = {str(r[0]).strip(): int(r[1]) for r in (rows3 or []) if r[0]}
+            state_progress = []
+            for st, total_acs in STATE_AC_COUNTS.items():
+                covered = covered_by_state.get(st, 0)
+                state_progress.append({
+                    'state': st,
+                    'acs': covered,
+                    'total_acs': total_acs,
+                    'pct': round((covered / total_acs) * 100) if total_acs else 0,
+                })
+            state_progress.sort(key=lambda s: (-s['pct'], -s['acs']))
+
+            total_acs_all = sum(STATE_AC_COUNTS.values())
             result['caste'] = {
                 'available': True,
                 'states': int(states or 0), 'acs_with_data': int(acs or 0),
                 'categories': int(cats or 0), 'total_rows': int(total_rows or 0),
                 'by_category': [{'category': r[0], 'acs': int(r[1]), 'rows': int(r[2])} for r in (rows2 or [])],
-                'top_states':  [{'state': r[0], 'acs': int(r[1])} for r in (rows3 or [])],
+                'top_states':  [{'state': r[0], 'acs': int(r[1])} for r in (rows3 or [])[:10]],
+                'state_progress': state_progress,
+                'total_acs_all': total_acs_all,
+                'coverage_pct_all': round((int(acs or 0) / total_acs_all) * 100) if total_acs_all else 0,
             }
         else:
             result['caste'] = {'available': False, 'error': err}
@@ -1756,7 +1333,7 @@ def form20_card_stats():
     # ── Load form20 live data ────────────────────────────────────────────────
     form20_set = set()
     form20_list = []
-    raw = cache_get('live') or []
+    raw = cache_get('live') or _load_json_list(LIVE_EXTRACTED_JSON_PATH)
     try:
         for item in raw:
             state   = str(item.get('state', '')).strip()
@@ -1770,7 +1347,7 @@ def form20_card_stats():
 
     # ── Load AC-PC mapping data ──────────────────────────────────────────────
     acpc_set = set()
-    raw2 = cache_get('acpc') or []
+    raw2 = cache_get('acpc') or _load_json_list(ACPC_EXTRACTED_JSON_PATH)
     try:
         for item in raw2:
             state   = str(item.get('state', '')).strip()
@@ -1784,7 +1361,17 @@ def form20_card_stats():
     # ── Compute metrics (AC-wise) ──────────────────────────────────────────────────────
     form20_ac_counts = cache_get('form20_ac_counts') or {}
     acpc_ac_counts = cache_get('acpc_ac_counts') or {}
-    
+
+    if not form20_ac_counts or not acpc_ac_counts:
+        # Fallback: the RDS view-based AC counts aren't cached yet, so approximate
+        # AC coverage from the election-level snapshots × the state's AC count.
+        acpc_ac_counts = {}
+        for state, _, _ in acpc_set:
+            acpc_ac_counts[state] = acpc_ac_counts.get(state, 0) + STATE_AC_COUNTS.get(state, 0)
+        form20_ac_counts = {}
+        for state, _, _ in form20_set:
+            form20_ac_counts[state] = form20_ac_counts.get(state, 0) + STATE_AC_COUNTS.get(state, 0)
+
     total_form20_acs = sum(form20_ac_counts.values())
     total_mapping_acs = sum(acpc_ac_counts.values())
     
@@ -1797,7 +1384,15 @@ def form20_card_stats():
     # By election type breakdown (AC-wise)
     form20_type_counts = cache_get('form20_type_counts') or {}
     acpc_type_counts = cache_get('acpc_type_counts') or {}
-    
+
+    if not form20_type_counts or not acpc_type_counts:
+        acpc_type_counts = {}
+        for state, t, _ in acpc_set:
+            acpc_type_counts[t] = acpc_type_counts.get(t, 0) + STATE_AC_COUNTS.get(state, 0)
+        form20_type_counts = {}
+        for state, t, _ in form20_set:
+            form20_type_counts[t] = form20_type_counts.get(t, 0) + STATE_AC_COUNTS.get(state, 0)
+
     all_types = sorted(set(list(form20_type_counts.keys()) + list(acpc_type_counts.keys())))
     by_type = {}
     for t in all_types:

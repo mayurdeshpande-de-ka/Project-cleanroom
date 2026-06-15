@@ -116,7 +116,6 @@ async function loadStats() {
     set('sl-wip-count', s.wip_count   || '0');
 
     const completed = (bs.db_pushed || 0) + (bs.completed || 0);
-    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     // Sidebar progress footer — the single home for overall completion + pipeline mix.
     const segW = (id, n) => {
@@ -127,9 +126,13 @@ async function loadStats() {
     segW('seg-extracted',  bs.extracted  || 0);
     segW('seg-downloaded', bs.downloaded || 0);
 
-    set('progress-text', `${completed} / ${total} completed`);
+    // The headline % and "x / y" text use AC-wise coverage (same metric as the
+    // Form 20 dashboard panel), so the two numbers stay consistent.
+    const ac = s.ac_coverage || {};
+    const acPct = ac.pct || 0;
+    set('progress-text', `${(ac.form20_acs || 0).toLocaleString()} / ${(ac.mapping_acs || 0).toLocaleString()} ACs completed`);
     const pctSidebar = document.getElementById('progress-pct-sidebar');
-    if (pctSidebar) pctSidebar.textContent = pct + '%';
+    if (pctSidebar) pctSidebar.textContent = acPct + '%';
   } catch (e) { console.error('loadStats:', e); }
 
   updateRecordBadge();
@@ -750,18 +753,6 @@ function bindEvents() {
       }
     });
 
-    // Pipeline Stages sidebar: only shown on the Listing page
-    const sidebar = document.getElementById('sidebar');
-    const mainContent = document.getElementById('main-content');
-    if (sidebar && mainContent) {
-      if (activeId === 'nav-listing') {
-        sidebar.classList.remove('hidden'); sidebar.classList.add('flex');
-        mainContent.classList.add('ml-[216px]');
-      } else {
-        sidebar.classList.add('hidden'); sidebar.classList.remove('flex');
-        mainContent.classList.remove('ml-[216px]');
-      }
-    }
   }
 
   navTabs.forEach(t => {
@@ -769,53 +760,20 @@ function bindEvents() {
     if (el) el.addEventListener('click', () => switchTab(t.id));
   });
 
+  // Footer quick links mirror the top nav tabs
+  const FOOTER_LINK_TO_TAB = { dashboard: 'nav-dashboard', listing: 'nav-listing', glance: 'nav-glance' };
+  document.querySelectorAll('.footer-link').forEach(el => {
+    el.addEventListener('click', () => {
+      const navId = FOOTER_LINK_TO_TAB[el.dataset.view];
+      if (navId) switchTab(navId);
+    });
+  });
+
   const dashRefreshBtn = document.getElementById('dash-refresh-btn');
   if (dashRefreshBtn) dashRefreshBtn.addEventListener('click', loadDashboardStats);
 
-  ['glance-date-filter', 'glance-state-filter', 'glance-type-filter'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('change', loadGlancePanel);
-  });
-
-  // Glance Report → Download analytics PDF (this week in focus)
-  const glancePdfBtn = document.getElementById('glance-pdf-btn');
-  if (glancePdfBtn) {
-    glancePdfBtn.addEventListener('click', async () => {
-      const state = (document.getElementById('glance-state-filter') || {}).value || '';
-      const type  = (document.getElementById('glance-type-filter')  || {}).value || '';
-      const params = new URLSearchParams();
-      if (state) params.set('state', state);
-      if (type)  params.set('el_type', type);
-      params.set('hide_bp', '1');
-
-      const orig = glancePdfBtn.innerHTML;
-      glancePdfBtn.disabled = true;
-      glancePdfBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:14px;">refresh</span> Generating…';
-      try {
-        const res = await fetch('/api/glance_report/pdf?' + params.toString());
-        if (!res.ok) {
-          let msg = 'PDF generation failed';
-          try { msg = (await res.json()).error || msg; } catch (_) {}
-          throw new Error(msg);
-        }
-        const blob = await res.blob();
-        const cd   = res.headers.get('Content-Disposition') || '';
-        const m    = cd.match(/filename="?([^"]+)"?/);
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href = url;
-        a.download = m ? m[1] : 'Weekly_Report.pdf';
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('Weekly Report PDF downloaded');
-      } catch (e) {
-        showToast(e.message, true);
-      } finally {
-        glancePdfBtn.disabled = false;
-        glancePdfBtn.innerHTML = orig;
-      }
-    });
-  }
+  // Glance Report → calendar week picker
+  initGlanceCalendar();
 
   document.getElementById('nav-retro').addEventListener('click', e => {
     e.preventDefault(); openRetroModal();
@@ -1035,10 +993,10 @@ function renderRetroPanel(r) {
     return;
   }
 
-  const acTotal = r.ac_total     || 0;
-  const acAvail = r.ac_available || 0;
-  const pctRaw  = acTotal > 0 ? (acAvail / acTotal) * 100 : 0;
-  const pct     = parseFloat(pctRaw.toFixed(2));   // 2-decimal accuracy
+  // AC-wise coverage — same metric as the Form 20 panel.
+  const acTotal = r.total_acs     || 0;
+  const acAvail = r.available_acs || 0;
+  const pct     = r.coverage_pct_acs || 0;
   const circ    = 163.4;
   const dash    = circ * (1 - Math.min(pct, 100) / 100);
 
@@ -1053,27 +1011,26 @@ function renderRetroPanel(r) {
   const setCov = document.getElementById('retro-covered-label');
   const setBar = document.getElementById('retro-prog');
   if (setPct) setPct.textContent = pct + '%';
-  if (setCov) setCov.textContent = fmtNum(acAvail) + ' / ' + fmtNum(acTotal) + ' elections covered';
+  if (setCov) setCov.textContent = fmtNum(acAvail) + ' / ' + fmtNum(acTotal) + ' ACs in DB';
   if (setBar) setBar.style.width = Math.min(pct, 100) + '%';
 
   // Hero ribbon — retro coverage
   const hr = document.getElementById('hero-retro');
   const hrs = document.getElementById('hero-retro-sub');
   if (hr)  hr.textContent  = pct + '%';
-  if (hrs) hrs.textContent = fmtNum(acAvail) + ' elections in DB';
+  if (hrs) hrs.textContent = fmtNum(acAvail) + ' / ' + fmtNum(acTotal) + ' ACs';
 
-  // ── By Election Type (AE / GE — non-BP) ──────────────────────────────────
+  // ── By Election Type (AE / GE — non-BP), AC-wise ─────────────────────────
   const typeWrap = document.getElementById('retro-type-rows');
-  if (typeWrap && r.by_type_ac) {
+  if (typeWrap && r.by_type_acs) {
     const TYPE_META = {
       'AE': { label: 'Assembly', bg: 'bg-indigo-500', text: 'text-indigo-600' },
       'GE': { label: 'General',  bg: 'bg-blue-500',   text: 'text-blue-600'  },
     };
-    typeWrap.innerHTML = r.by_type_ac.map(t => {
-      const pRaw = t.total > 0 ? (t.available / t.total) * 100 : 0;
-      const p    = parseFloat(pRaw.toFixed(2));   // 2-decimal accuracy
+    typeWrap.innerHTML = r.by_type_acs.map(t => {
+      const p = t.total > 0 ? Math.round((t.available / t.total) * 100) : 0;
       const m = TYPE_META[t.type] || { label: t.type, bg: 'bg-gray-400', text: 'text-gray-600' };
-      const pctColor = p >= 99.99 ? 'text-emerald-600' : p >= 80 ? 'text-blue-600' : p >= 50 ? 'text-amber-600' : 'text-rose-500';
+      const pctColor = p === 100 ? 'text-emerald-600' : p >= 80 ? 'text-blue-600' : p >= 50 ? 'text-amber-600' : 'text-rose-500';
       return `
         <div class="flex items-center gap-2">
           <div class="flex items-center gap-1.5 w-[90px] shrink-0">
@@ -1092,18 +1049,18 @@ function renderRetroPanel(r) {
     }).join('');
   }
 
-  // ── Top States — pill grid with AC count + pct ───────────────────────────
+  // ── Top States — pill grid, AC-wise count + pct ──────────────────────────
   const stateWrap = document.getElementById('retro-state-rows');
-  if (stateWrap && r.top_states_ac) {
-    const max = r.top_states_ac[0]?.available || 1;
+  if (stateWrap && r.top_states_acs) {
+    const max = r.top_states_acs[0]?.available || 1;
     stateWrap.className = 'grid grid-cols-4 gap-1.5';
-    stateWrap.innerHTML = r.top_states_ac.map(s => {
+    stateWrap.innerHTML = r.top_states_acs.map(s => {
       const intensity = Math.round((s.available / max) * 9) + 1;
       const bg = intensity >= 8 ? 'bg-indigo-100 border-indigo-200' :
                  intensity >= 5 ? 'bg-indigo-50 border-indigo-100' : 'bg-gray-50 border-gray-100';
       const tc = intensity >= 8 ? 'text-indigo-700' : intensity >= 5 ? 'text-indigo-600' : 'text-gray-600';
       return `
-        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.available)} / ${fmtNum(s.expected)} elections (${s.pct}%)">
+        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.available)} / ${fmtNum(s.expected)} ACs (${s.pct}%)">
           <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
           <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.available)}</span>
           <span class="text-[9px] text-gray-400 tabular-nums leading-none">${s.pct}%</span>
@@ -1159,190 +1116,80 @@ function renderCastePanel(d) {
     return;
   }
 
-  // ── Clean / dedupe categories ──────────────────────────────────────────────
-  const merged = {};
-  (d.by_category || []).forEach(c => {
-    const name = casteDisplayName(c.category);
-    if (!merged[name]) merged[name] = { category: name, acs: 0, rows: 0 };
-    merged[name].acs  = Math.max(merged[name].acs, c.acs || 0); // distinct-AC: take max, not sum
-    merged[name].rows += (c.rows || 0);
-  });
-  const cats = Object.values(merged).sort((a, b) => b.acs - a.acs);
+  const acsCovered = d.acs_with_data || 0;
+  const realCatN   = (d.by_category || []).length;
 
-  const acsCovered  = d.acs_with_data || 0;
-  const totalRows   = d.total_rows || cats.reduce((a, c) => a + c.rows, 0);
-  const realCatN    = cats.length;            // deduped count
-  const rawCatN     = d.categories || realCatN;
-  const density     = acsCovered > 0 ? (totalRows / acsCovered) : 0;
-
-  if (pctEl) pctEl.textContent = fmtNum(acsCovered) + ' ACs';
+  const coveragePctAll = d.coverage_pct_all || 0;
+  if (pctEl) pctEl.textContent = coveragePctAll + '% AC coverage';
   if (subStatesEl) subStatesEl.textContent = fmtNum(d.states);
-  if (heroCaste)    heroCaste.textContent    = fmtNum(totalRows);
-  if (heroCasteSub) heroCasteSub.textContent = `${realCatN} categories · ${fmtNum(acsCovered)} ACs`;
+  if (heroCaste)    heroCaste.textContent    = fmtNum(acsCovered);
+  if (heroCasteSub) heroCasteSub.textContent = `${realCatN} categories · ${fmtNum(d.states)} states`;
 
   if (!body) return;
 
-  // ── Coverage tiers ─────────────────────────────────────────────────────────
-  const tierOf = pct => pct >= 75 ? 'core' : pct >= 40 ? 'strong' : pct >= 10 ? 'regional' : 'sparse';
-  const TIER_META = {
-    core:     { label: 'Near-universal', color: '#059669', bg: 'bg-emerald-50 text-emerald-700' },
-    strong:   { label: 'Strong',          color: '#2563eb', bg: 'bg-blue-50 text-blue-700' },
-    regional: { label: 'Regional',        color: '#d97706', bg: 'bg-amber-50 text-amber-700' },
-    sparse:   { label: 'Sparse',          color: '#94a3b8', bg: 'bg-slate-100 text-slate-500' },
-  };
-  cats.forEach(c => { c.pct = acsCovered > 0 ? (c.acs / acsCovered) * 100 : 0; c.tier = tierOf(c.pct); });
+  const stateProgress = d.state_progress || [];
+  const totalAcsAll   = d.total_acs_all || 0;
 
-  const coreCats = cats.filter(c => c.tier === 'core');
-  const tierCounts = cats.reduce((m, c) => { m[c.tier] = (m[c.tier] || 0) + 1; return m; }, {});
-
-  // ── Auto-generated insight (PowerBI-style headline) ────────────────────────
-  const topNames = coreCats.slice(0, 3).map(c => c.category);
-  const longTail = cats.filter(c => c.tier === 'sparse' || c.tier === 'regional').slice(-3).map(c => c.category);
-  let insight;
-  if (topNames.length) {
-    const named = coreCats.slice(0, 3);
-    const minCore = Math.floor(Math.min(...named.map(c => c.pct)));
-    insight = `<b>${topNames.join(', ')}</b> data reaches <b>${minCore}%+</b> of all ${fmtNum(acsCovered)} covered ACs — the most complete demographic dimensions.`;
-    if (longTail.length) insight += ` In contrast, ${longTail.join(', ')} remain regional/sparse, signalling where caste enrichment is still thin.`;
-  } else {
-    insight = `Caste data spans ${realCatN} categories across ${fmtNum(d.states)} states with an average of <b>${density.toFixed(1)} records/AC</b>.`;
-  }
-
-  // ── Donut: record-volume share (top 6 + Others) ────────────────────────────
-  const byRows = [...cats].sort((a, b) => b.rows - a.rows);
-  const donutTop = byRows.slice(0, 6);
-  const otherRows = byRows.slice(6).reduce((a, c) => a + c.rows, 0);
-  const donutLabels = donutTop.map(c => c.category).concat(otherRows > 0 ? ['Others'] : []);
-  const donutData   = donutTop.map(c => c.rows).concat(otherRows > 0 ? [otherRows] : []);
-  const donutColors = donutTop.map((_, i) => CASTE_PALETTE[i % CASTE_PALETTE.length]).concat(otherRows > 0 ? ['#cbd5e1'] : []);
-
-  const topStates = (d.top_states || []);
-  const maxStateAc = topStates[0]?.acs || 1;
+  const circ = 163.4;
+  const dash = circ * (1 - Math.min(coveragePctAll, 100) / 100);
+  const topStates = [...stateProgress].sort((a, b) => b.acs - a.acs).slice(0, 8);
+  const maxTopAc = topStates[0]?.acs || 1;
 
   body.innerHTML = `
     <div class="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 fade-up">
 
-      <!-- LEFT: KPIs + donut -->
-      <div class="lg:col-span-4 flex flex-col gap-4">
-        <!-- KPI tiles -->
-        <div class="grid grid-cols-2 gap-2.5">
-          ${[
-            { v: fmtNum(acsCovered), l: 'ACs Covered', c: 'text-amber-600', i: 'map' },
-            { v: fmtNum(d.states),   l: 'States',      c: 'text-gray-900',  i: 'public' },
-            { v: realCatN,           l: 'Categories',  c: 'text-gray-900',  i: 'category', sub: rawCatN > realCatN ? `${rawCatN} raw` : '' },
-            { v: density.toFixed(1), l: 'Records / AC', c: 'text-indigo-600', i: 'density_medium' },
-          ].map(k => `
-            <div class="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-3">
-              <div class="flex items-center justify-between mb-1">
-                <span class="material-symbols-outlined text-gray-300" style="font-size:14px;">${k.i}</span>
-                ${k.sub ? `<span class="text-[8.5px] font-semibold text-gray-300">${k.sub}</span>` : ''}
-              </div>
+      <!-- LEFT: Ring + KPIs -->
+      <div class="lg:col-span-4 flex flex-col gap-2.5">
+        <div class="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-3 flex items-center gap-3">
+          <div class="relative shrink-0 w-[64px] h-[64px]">
+            <svg width="64" height="64" viewBox="0 0 64 64" class="-rotate-90">
+              <circle cx="32" cy="32" r="26" fill="none" stroke="#e5e7eb" stroke-width="6"/>
+              <circle cx="32" cy="32" r="26" fill="none" stroke="#f59e0b" stroke-width="6"
+                stroke-dasharray="${circ}" stroke-dashoffset="${dash}" stroke-linecap="round"
+                style="transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)"/>
+            </svg>
+            <span class="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-gray-700">${coveragePctAll}%</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-[20px] font-black tabular-nums leading-none text-amber-600">${coveragePctAll}%</p>
+            <p class="text-[10px] text-gray-400 font-medium mt-0.5">complete</p>
+            <p class="text-[10.5px] text-gray-500 tabular-nums mt-0.5 font-medium">${fmtNum(acsCovered)} / ${fmtNum(totalAcsAll)} ACs</p>
+          </div>
+        </div>
+        ${[
+          { v: fmtNum(totalAcsAll), l: 'Total ACs',          c: 'text-gray-900',  i: 'map' },
+          { v: fmtNum(acsCovered),  l: 'ACs with Caste Data', c: 'text-amber-600', i: 'groups' },
+          { v: fmtNum(d.states),    l: 'States',             c: 'text-gray-900',  i: 'public' },
+        ].map(k => `
+          <div class="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-3 flex items-center gap-3">
+            <span class="material-symbols-outlined text-gray-300" style="font-size:18px;">${k.i}</span>
+            <div>
               <p class="text-[20px] font-black tabular-nums leading-none ${k.c}">${k.v}</p>
               <p class="text-[9.5px] text-gray-400 font-medium mt-1 uppercase tracking-wide">${k.l}</p>
-            </div>`).join('')}
-        </div>
-
-        <!-- Record volume donut -->
-        <div class="rounded-xl border border-gray-100 p-3">
-          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Record Volume Share</p>
-          <div class="relative mx-auto" style="width:150px;height:150px;">
-            <canvas id="casteDonut"></canvas>
-            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span class="text-[17px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(totalRows)}</span>
-              <span class="text-[9px] text-gray-400 font-medium">records</span>
             </div>
-          </div>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1 mt-3">
-            ${donutLabels.map((lbl, i) => {
-              const share = totalRows > 0 ? Math.round((donutData[i] / totalRows) * 100) : 0;
-              return `<div class="flex items-center gap-1.5 min-w-0">
-                <span class="w-2 h-2 rounded-sm shrink-0" style="background:${donutColors[i]}"></span>
-                <span class="text-[10px] text-gray-600 truncate flex-1">${lbl}</span>
-                <span class="text-[10px] font-semibold text-gray-400 tabular-nums">${share}%</span>
-              </div>`;
-            }).join('')}
-          </div>
-        </div>
+          </div>`).join('')}
       </div>
 
-      <!-- MIDDLE: insight + category reach -->
-      <div class="lg:col-span-5 flex flex-col gap-3">
-        <div class="insight-banner px-3.5 py-3 flex items-start gap-2.5">
-          <span class="material-symbols-outlined text-amber-500 shrink-0" style="font-size:16px;">lightbulb</span>
-          <p class="text-[11.5px] text-amber-900/90 leading-relaxed">${insight}</p>
-        </div>
-
-        <div class="flex items-center justify-between">
-          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Category Reach <span class="text-gray-300 normal-case font-medium">· % of covered ACs</span></p>
-          <div class="flex items-center gap-1.5">
-            ${['core','strong','regional','sparse'].filter(t => tierCounts[t]).map(t =>
-              `<span class="tier-chip ${TIER_META[t].bg}"><span class="w-1.5 h-1.5 rounded-full" style="background:${TIER_META[t].color}"></span>${tierCounts[t]}</span>`
-            ).join('')}
-          </div>
-        </div>
-
-        <div class="flex flex-col gap-2">
-          ${cats.map(c => {
-            const tm = TIER_META[c.tier];
-            const pctTxt = c.pct >= 10 ? Math.round(c.pct) : c.pct.toFixed(1);
+      <!-- RIGHT: Top States — AC-wise coverage, pill grid -->
+      <div class="lg:col-span-8 flex flex-col">
+        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Top States — AC-wise Coverage</p>
+        <div class="grid grid-cols-4 gap-1.5">
+          ${topStates.map(s => {
+            const intensity = Math.round((s.acs / maxTopAc) * 9) + 1;
+            const bg = intensity >= 8 ? 'bg-amber-100 border-amber-200' :
+                       intensity >= 5 ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100';
+            const tc = intensity >= 8 ? 'text-amber-700' : intensity >= 5 ? 'text-amber-600' : 'text-gray-600';
             return `
-              <div class="flex items-center gap-2.5">
-                <span class="text-[11px] font-semibold text-gray-700 w-[68px] shrink-0 truncate" title="${c.category}">${c.category}</span>
-                <div class="flex-1 h-2.5 cov-track">
-                  <div class="cov-fill" style="width:${Math.max(c.pct, 1.5)}%;background:${tm.color}"></div>
-                </div>
-                <span class="text-[10.5px] font-bold tabular-nums w-9 text-right" style="color:${tm.color}">${pctTxt}%</span>
-                <span class="text-[9.5px] text-gray-400 tabular-nums w-[58px] text-right">${fmtNum(c.acs)} ACs</span>
-              </div>`;
-          }).join('')}
-        </div>
-      </div>
-
-      <!-- RIGHT: top states -->
-      <div class="lg:col-span-3 flex flex-col">
-        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Top States by Coverage</p>
-        <div class="flex flex-col gap-1.5">
-          ${topStates.slice(0, 10).map((s, i) => {
-            const p = Math.round((s.acs / maxStateAc) * 100);
-            const rankColor = i === 0 ? 'bg-amber-100 text-amber-700' : i < 3 ? 'bg-gray-100 text-gray-600' : 'bg-gray-50 text-gray-400';
-            return `
-              <div class="flex items-center gap-2">
-                <span class="w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center shrink-0 ${rankColor}">${i + 1}</span>
-                <span class="text-[11px] font-bold text-gray-700 w-7 shrink-0">${s.state}</span>
-                <div class="flex-1 h-2 cov-track">
-                  <div class="cov-fill" style="width:${p}%;background:linear-gradient(90deg,#fbbf24,#f59e0b)"></div>
-                </div>
-                <span class="text-[10px] tabular-nums text-gray-500 w-9 text-right shrink-0">${fmtNum(s.acs)}</span>
+              <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.acs)} / ${fmtNum(s.total_acs)} ACs (${s.pct}%)">
+                <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
+                <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.acs)}</span>
+                <span class="text-[9px] text-gray-400 tabular-nums leading-none">${s.pct}%</span>
               </div>`;
           }).join('')}
         </div>
       </div>
 
     </div>`;
-
-  // ── Instantiate donut ──────────────────────────────────────────────────────
-  const ctx = document.getElementById('casteDonut')?.getContext('2d');
-  if (ctx) {
-    if (gCasteChart) { gCasteChart.destroy(); gCasteChart = null; }
-    gCasteChart = new Chart(ctx, {
-      type: 'doughnut',
-      data: { labels: donutLabels, datasets: [{ data: donutData, backgroundColor: donutColors, borderColor: '#fff', borderWidth: 2, hoverOffset: 4 }] },
-      options: {
-        cutout: '68%', responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: c => {
-                const share = totalRows > 0 ? ((c.parsed / totalRows) * 100).toFixed(1) : 0;
-                return ` ${c.label}: ${fmtNum(c.parsed)} (${share}%)`;
-              }
-            }
-          }
-        }
-      }
-    });
-  }
 }
 
 async function loadDashboardStats() {
@@ -1472,50 +1319,239 @@ function populateForm20Card(d) {
 
 
 
+// Returns the Monday (YYYY-MM-DD) of the week containing the given date string.
+function mondayOf(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = d.getDay(); // 0 = Sunday ... 6 = Saturday
+  const diff = dow === 0 ? -6 : 1 - dow; // shift back to Monday
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+// Renders the week-picker strip: every tracked week as a colored, clickable chip.
+// "selected" = the chip matching the active filter, "current" = the live calendar week.
+function renderGlanceWeekPicker(weeks, selectedStart) {
+  const wrap = document.getElementById('glance-week-picker');
+  if (!wrap) return;
+
+  if (!weeks.length) {
+    wrap.innerHTML = '<span class="text-[11px] text-gray-400">No weeks tracked yet</span>';
+    return;
+  }
+
+  wrap.innerHTML = weeks.map(w => {
+    const isSelected = selectedStart && w.start === selectedStart;
+    const isCurrent  = !!w.is_current;
+    let cls = 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50';
+    if (isSelected) cls = 'bg-indigo-600 text-white border-indigo-600 shadow-sm';
+    else if (isCurrent) cls = 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:border-emerald-300';
+
+    return `
+      <button type="button" data-week="${w.start}"
+        class="glance-week-chip shrink-0 flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border text-center transition-all duration-150 ${cls}"
+        title="${w.display}${w.count ? ' · ' + w.count + ' pushed' : ''}">
+        <span class="text-[10.5px] font-semibold leading-tight whitespace-nowrap">${w.display}</span>
+        <span class="text-[9px] tabular-nums leading-tight ${isSelected ? 'text-indigo-100' : 'text-gray-400'}">${w.count} pushed</span>
+      </button>`;
+  }).join('');
+
+  wrap.querySelectorAll('.glance-week-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dateEl = document.getElementById('glance-date-filter');
+      if (!dateEl) return;
+      // Clicking the already-selected week clears the filter (back to current week)
+      dateEl.value = (mondayOf(dateEl.value) === btn.dataset.week) ? '' : btn.dataset.week;
+      loadGlancePanel();
+    });
+  });
+}
+
+// ── Glance Report: calendar week picker ─────────────────────────────────────
+let glanceCalMonth = new Date(); // first-of-month cursor for the popup grid
+
+function initGlanceCalendar() {
+  const btn   = document.getElementById('glance-cal-btn');
+  const popup = document.getElementById('glance-cal-popup');
+  if (!btn || !popup) return;
+
+  glanceCalMonth = new Date();
+  glanceCalMonth.setDate(1);
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const isHidden = popup.classList.contains('hidden');
+    if (isHidden) {
+      const dateEl = document.getElementById('glance-date-filter');
+      const ref = dateEl && dateEl.value ? new Date(dateEl.value + 'T00:00:00') : new Date();
+      glanceCalMonth = new Date(ref.getFullYear(), ref.getMonth(), 1);
+      renderGlanceCalendar();
+    }
+    popup.classList.toggle('hidden');
+  });
+
+  document.addEventListener('click', e => {
+    if (!popup.classList.contains('hidden') && !popup.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+      popup.classList.add('hidden');
+    }
+  });
+
+  updateGlanceCalLabel();
+}
+
+function updateGlanceCalLabel() {
+  const label = document.getElementById('glance-cal-label');
+  if (!label) return;
+  const dateEl = document.getElementById('glance-date-filter');
+  const val = dateEl && dateEl.value;
+
+  if (!val) { label.textContent = 'This Week'; return; }
+
+  const mon = mondayOf(val);
+  const sun = new Date(mon + 'T00:00:00');
+  sun.setDate(sun.getDate() + 6);
+  const fmt = (d, withYear) => {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${d.getDate()} ${months[d.getMonth()]}${withYear ? ' ' + d.getFullYear() : ''}`;
+  };
+  const monD = new Date(mon + 'T00:00:00');
+  label.textContent = `${fmt(monD, false)} – ${fmt(sun, true)}`;
+}
+
+// Renders the popup calendar grid. Clicking any day selects that day's whole
+// Mon–Sun week (highlighted together) and reloads the Glance Report.
+function renderGlanceCalendar() {
+  const popup = document.getElementById('glance-cal-popup');
+  if (!popup) return;
+
+  const dateEl = document.getElementById('glance-date-filter');
+  const selected = dateEl && dateEl.value ? new Date(dateEl.value + 'T00:00:00') : null;
+  const selectedMon = selected ? mondayOf(dateEl.value) : mondayOf(new Date().toISOString().slice(0, 10));
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayStr = today.toISOString().slice(0, 10);
+
+  const year  = glanceCalMonth.getFullYear();
+  const month = glanceCalMonth.getMonth();
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  // Monday-first grid: start from the Monday on/before the 1st of the month
+  const firstOfMonth = new Date(year, month, 1);
+  const startOffset  = (firstOfMonth.getDay() + 6) % 7; // 0 = Monday
+  const gridStart = new Date(year, month, 1 - startOffset);
+
+  let cells = '';
+  for (let i = 0; i < 42; i++) {
+    const cell = new Date(gridStart);
+    cell.setDate(gridStart.getDate() + i);
+    const cellStr = cell.toISOString().slice(0, 10);
+    const inMonth = cell.getMonth() === month;
+    const inSelectedWeek = mondayOf(cellStr) === selectedMon;
+    const isToday = cellStr === todayStr;
+
+    let cls = 'rounded-md';
+    if (inSelectedWeek) {
+      cls += ' text-white font-bold';
+    } else {
+      cls += inMonth ? ' text-gray-700 hover:bg-indigo-50' : ' text-gray-300 hover:bg-gray-50';
+    }
+    if (isToday && !inSelectedWeek) cls += ' ring-2 ring-inset ring-indigo-400';
+
+    let style = '';
+    if (inSelectedWeek) {
+      style = 'background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#d946ef 100%);';
+      if (isToday) style += 'box-shadow:0 0 0 2px #fff inset, 0 0 0 4px #f59e0b inset;';
+    }
+
+    cells += `<button type="button" data-date="${cellStr}" style="${style}"
+                class="glance-cal-day h-8 w-8 flex items-center justify-center text-[11.5px] transition-colors duration-100 ${cls}">${cell.getDate()}</button>`;
+  }
+
+  const weekdayHeaders = ['Mo','Tu','We','Th','Fr','Sa','Su'].map(d =>
+    `<span class="h-6 flex items-center justify-center text-[10px] font-bold text-gray-400 uppercase">${d}</span>`
+  ).join('');
+
+  popup.innerHTML = `
+    <div class="flex items-center justify-between mb-2 px-1">
+      <button type="button" id="glance-cal-prev" class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+        <span class="material-symbols-outlined" style="font-size:16px;">chevron_left</span>
+      </button>
+      <p class="text-[12.5px] font-bold text-gray-900">${monthNames[month]} ${year}</p>
+      <button type="button" id="glance-cal-next" class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+        <span class="material-symbols-outlined" style="font-size:16px;">chevron_right</span>
+      </button>
+    </div>
+    <div class="grid grid-cols-7 gap-1 mb-1">${weekdayHeaders}</div>
+    <div class="grid grid-cols-7 gap-1">${cells}</div>
+    <div class="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
+      <button type="button" id="glance-cal-today" class="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">Jump to this week</button>
+      <button type="button" id="glance-cal-clear" class="text-[11px] font-medium text-gray-400 hover:text-gray-600 transition-colors">Clear</button>
+    </div>`;
+
+  popup.querySelectorAll('.glance-cal-day').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (dateEl) dateEl.value = btn.dataset.date;
+      updateGlanceCalLabel();
+      renderGlanceCalendar();
+      popup.classList.add('hidden');
+      loadGlancePanel();
+    });
+  });
+
+  document.getElementById('glance-cal-prev').addEventListener('click', () => {
+    glanceCalMonth.setMonth(glanceCalMonth.getMonth() - 1);
+    renderGlanceCalendar();
+  });
+  document.getElementById('glance-cal-next').addEventListener('click', () => {
+    glanceCalMonth.setMonth(glanceCalMonth.getMonth() + 1);
+    renderGlanceCalendar();
+  });
+  document.getElementById('glance-cal-today').addEventListener('click', () => {
+    if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
+    glanceCalMonth = new Date(); glanceCalMonth.setDate(1);
+    updateGlanceCalLabel();
+    renderGlanceCalendar();
+    popup.classList.add('hidden');
+    loadGlancePanel();
+  });
+  document.getElementById('glance-cal-clear').addEventListener('click', () => {
+    if (dateEl) dateEl.value = '';
+    updateGlanceCalLabel();
+    renderGlanceCalendar();
+    popup.classList.add('hidden');
+    loadGlancePanel();
+  });
+}
+
 // ── Glance Report ─────────────────────────────────────────────────────────────
 async function loadGlancePanel() {
-  const dateFilter  = (document.getElementById('glance-date-filter') || {}).value || '';
-  const stateFilter = (document.getElementById('glance-state-filter') || {}).value || '';
-  const typeFilter  = (document.getElementById('glance-type-filter')  || {}).value || '';
+  const dateFilter = (document.getElementById('glance-date-filter') || {}).value || '';
   try {
     const params = new URLSearchParams();
-    if (dateFilter)  params.append('week',    dateFilter);
-    if (stateFilter) params.append('state',   stateFilter);
-    if (typeFilter)  params.append('el_type', typeFilter);
+    if (dateFilter) params.append('week', dateFilter);
     params.append('hide_bp', '1');
 
     const glance = await apiFetch('/api/glance_report?' + params.toString());
 
-
-
-    // Populate state/type filters from main selects once
-    const stSel = document.getElementById('glance-state-filter');
-    if (stSel && stSel.options.length <= 1) {
-      const mainState = document.getElementById('filter-state');
-      if (mainState) Array.from(mainState.options).forEach(o => { if (o.value) stSel.add(new Option(o.text, o.value)); });
-    }
-    const tySel = document.getElementById('glance-type-filter');
-    if (tySel && tySel.options.length <= 1 && filterMetadata) {
-      const allTypes = new Set();
-      Object.values(filterMetadata).forEach(types => Object.keys(types).forEach(t => allTypes.add(t)));
-      Array.from(allTypes).sort().forEach(t => tySel.add(new Option(t, t)));
-    }
+    renderGlanceWeekPicker(glance.available_weeks || [], mondayOf(dateFilter));
 
     const accordion = document.getElementById('glance-panel-accordion');
     const countSpan = document.getElementById('glance-panel-count');
-    const allWeeks  = glance.all_weeks || [];
+    const allWeeks    = glance.all_weeks   || [];
+    const allRecords  = glance.all_records || [];
+    const weekRecords = (allWeeks[0] && allWeeks[0].records) || [];
 
-    if (countSpan) countSpan.textContent = allWeeks.reduce((acc, w) => acc + w.count, 0) + ' records';
+    if (countSpan) countSpan.textContent = weekRecords.length + ' records this week';
 
-    renderGlanceAnalytics(glance, allWeeks);
+    renderGlanceAnalytics(glance, allWeeks, allRecords, weekRecords);
 
     if (!accordion) return;
 
-    if (allWeeks.length === 0) {
+    if (weekRecords.length === 0) {
       accordion.innerHTML = `
         <div class="p-12 text-center flex flex-col items-center gap-3 text-gray-400">
           <span class="material-symbols-outlined" style="font-size:32px;">inbox</span>
-          <p class="text-[12.5px] font-medium">No DB pushed records found for the selected filters.</p>
+          <p class="text-[12.5px] font-medium">No DB pushed records found for this week.</p>
         </div>`;
       return;
     }
@@ -1524,15 +1560,13 @@ async function loadGlancePanel() {
     const weekLabels = glance.trend_weeks_labels || [];
 
     const stateMap = {};
-    allWeeks.forEach(w => {
-      w.records.forEach(r => {
-        const parts = String(r.key).split('-');
-        const st = parts[0] || '?';
-        const yr = parts.length >= 2 ? parts[parts.length - 1] : '';
-        const ty = parts.length >= 3 ? parts.slice(1, -1).join('-') : '';
-        if (!stateMap[st]) stateMap[st] = { elections: [], byWeek: {} };
-        stateMap[st].elections.push({ type: ty, year: yr, key: r.key, date: r.date });
-      });
+    weekRecords.forEach(r => {
+      const parts = String(r.key).split('-');
+      const st = parts[0] || '?';
+      const yr = parts.length >= 2 ? parts[parts.length - 1] : '';
+      const ty = parts.length >= 3 ? parts.slice(1, -1).join('-') : '';
+      if (!stateMap[st]) stateMap[st] = { elections: [], byWeek: {} };
+      stateMap[st].elections.push({ type: ty, year: yr, key: r.key, date: r.date });
     });
 
     const trend = glance.trend_4_weeks || {};
@@ -1643,21 +1677,28 @@ async function loadGlancePanel() {
   } catch (e) { console.error('loadGlancePanel:', e); }
 }
 
-function renderGlanceAnalytics(glance, allWeeks) {
-  // Flatten all pushed records
-  const allRecs = [];
-  allWeeks.forEach(w => w.records.forEach(r => allRecs.push(r)));
+function renderGlanceAnalytics(glance, allWeeks, allRecords, weekRecords) {
+  // All pushed records matching the current filters (all-time) — used for the top summary cards
+  const allRecs = allRecords || [];
   const total = allRecs.length;
 
-  // Aggregate by state / type from the record key (STATE-TYPE-YEAR)
-  const stateCounts = {}, typeCounts = {};
-  allRecs.forEach(r => {
-    const parts = String(r.key).split('-');
-    const st = parts[0] || '?';
-    const ty = parts.length >= 3 ? parts.slice(1, -1).join('-') : (parts[1] || '?');
-    stateCounts[st] = (stateCounts[st] || 0) + 1;
-    typeCounts[ty]  = (typeCounts[ty]  || 0) + 1;
-  });
+  // Records for the selected/current week only — drives State Performance & Election Type Distribution
+  const weekRecs = weekRecords || [];
+
+  const countByStateType = recs => {
+    const stateCounts = {}, typeCounts = {};
+    recs.forEach(r => {
+      const parts = String(r.key).split('-');
+      const st = parts[0] || '?';
+      const ty = parts.length >= 3 ? parts.slice(1, -1).join('-') : (parts[1] || '?');
+      stateCounts[st] = (stateCounts[st] || 0) + 1;
+      typeCounts[ty]  = (typeCounts[ty]  || 0) + 1;
+    });
+    return { stateCounts, typeCounts };
+  };
+
+  const { stateCounts } = countByStateType(allRecs);
+  const { stateCounts: weekStateCounts, typeCounts: weekTypeCounts } = countByStateType(weekRecs);
 
   // Weekly series — last 4 weeks for Glance analytics, all-time for context
   const weekly      = glance.weekly_counts     || {};   // last 4 weeks
@@ -1740,11 +1781,11 @@ function renderGlanceAnalytics(glance, allWeeks) {
     });
   }
 
-  // ── State performance (horizontal bar, top 8) ───────────────────────────
+  // ── State performance (horizontal bar, top 8) — current week only ───────
   const sCtx = document.getElementById('glanceStateChart')?.getContext('2d');
   if (sCtx) {
     if (gStateChart) { gStateChart.destroy(); gStateChart = null; }
-    const sorted = Object.entries(stateCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const sorted = Object.entries(weekStateCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
     gStateChart = new Chart(sCtx, {
       type: 'bar',
       data: {
@@ -1763,16 +1804,17 @@ function renderGlanceAnalytics(glance, allWeeks) {
     });
   }
 
-  // ── Election type distribution (HTML bars) ──────────────────────────────
+  // ── Election type distribution (HTML bars) — current week only ──────────
   const typeWrap = document.getElementById('glance-type-bars');
   if (typeWrap) {
-    const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+    const sortedTypes = Object.entries(weekTypeCounts).sort((a, b) => b[1] - a[1]);
+    const weekTotal = weekRecs.length;
     const palette = ['#6366f1', '#7c3aed', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
     if (!sortedTypes.length) {
-      typeWrap.innerHTML = '<p class="text-[12px] text-gray-400 text-center py-3">No data</p>';
+      typeWrap.innerHTML = '<p class="text-[12px] text-gray-400 text-center py-3">No data for this week</p>';
     } else {
       typeWrap.innerHTML = sortedTypes.map(([ty, cnt], i) => {
-        const pct  = total ? Math.round((cnt / total) * 100) : 0;
+        const pct  = weekTotal ? Math.round((cnt / weekTotal) * 100) : 0;
         const name = EL_TYPE_NAMES[ty] || ty;
         const col  = palette[i % palette.length];
         return `

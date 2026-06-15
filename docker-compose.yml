@@ -1,0 +1,31 @@
+# Redis cache for the Form 20 Backlog Dashboard.
+#
+# This is the SHARED cache used by all 3 gunicorn workers (see app.py:
+# get_redis / cache_get / cache_set / trigger_refresh). It replaces the old
+# per-process in-memory + on-disk JSON cache, so:
+#   - All workers see the same dashboard/analytics/retro/live data.
+#   - Only ONE worker refreshes from RDS per TTL window (single-flight lock),
+#     instead of each worker hammering RDS independently.
+#   - Nothing is written to local disk / the git repo.
+#
+# Usage on EC2:
+#   docker compose up -d redis
+#
+# The app reads REDIS_URL from the environment (.env), defaulting to
+# redis://127.0.0.1:6379/0 — matching the port mapping below.
+#
+# IMPORTANT: bound to 127.0.0.1 only — never exposed outside the host.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: form20_redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

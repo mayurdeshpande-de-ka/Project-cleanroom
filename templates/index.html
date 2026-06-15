@@ -64,26 +64,35 @@
     .nav-tab:not(.active) { color: #6b7280; }
     .nav-tab:not(.active):hover { color: #374151; background: #f9fafb; }
 
+    /* ── Footer ── */
+    .footer-link {
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: color 0.1s, background 0.1s;
+    }
+    .footer-link:hover { color: #111827; background: #f9fafb; }
+    .footer-dot {
+      width: 3px; height: 3px; border-radius: 50%;
+      background: #d1d5db;
+      display: inline-block;
+    }
+
     /* ── Sidebar links ── */
     .sidelink {
       transition: all 0.1s;
       border-left: 2px solid transparent;
     }
-    .sidelink.sl-active {
-      background: #f4f4f5;
-      color: #111827;
-      font-weight: 600;
-      border-left-color: #111827;
+    .sidelink.kpi-card {
+      border-left-width: 1px;
     }
-    .sidelink:not(.sl-active):hover {
-      background: #fafafa;
-      color: #374151;
+    .sidelink.sl-active {
+      border-color: #111827 !important;
+      box-shadow: 0 0 0 3px rgba(17,24,39,0.08);
     }
     .sidelink.sl-wip-active {
-      background: #fffbeb;
-      color: #92400e;
-      font-weight: 600;
-      border-left-color: #f59e0b;
+      border-color: #f59e0b !important;
+      box-shadow: 0 0 0 3px rgba(245,158,11,0.12);
     }
 
     /* ── Table rows ── */
@@ -248,76 +257,6 @@
 <div class="flex h-screen pt-[48px]">
 
   <!-- ══════════════════════
-       SIDEBAR  216px
-  ══════════════════════ -->
-  <aside id="sidebar" class="hidden fixed left-0 top-[48px] w-[216px] h-[calc(100vh-48px)] bg-white border-r border-gray-200 flex-col z-40 shrink-0">
-
-    <div class="px-4 pt-5 pb-2">
-      <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Pipeline Stages</p>
-    </div>
-
-    <nav class="flex flex-col gap-0.5 px-2 sidebar-nav flex-1 overflow-y-auto">
-
-      <a data-view="all" class="sidelink sl-active flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer" href="#">
-        <div class="flex items-center gap-2.5">
-          <span class="material-symbols-outlined text-gray-500" style="font-size:15px;">list_alt</span>
-          <span class="text-[12.5px]">All Records</span>
-        </div>
-        <span class="text-[11px] text-gray-400 tabular-nums font-medium" id="sl-all-count"></span>
-      </a>
-
-      <a data-view="missing" class="sidelink flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-gray-500" href="#">
-        <div class="flex items-center gap-2.5">
-          <span class="w-2 h-2 rounded-full bg-gray-300 shrink-0"></span>
-          <span class="text-[12.5px]">Remaining</span>
-        </div>
-        <span class="text-[11px] text-gray-400 tabular-nums font-medium" id="sl-mi-count"></span>
-      </a>
-
-      <a data-view="downloaded" class="sidelink flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-gray-500" href="#">
-        <div class="flex items-center gap-2.5">
-          <span class="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span>
-          <span class="text-[12.5px]">Downloaded</span>
-        </div>
-        <span class="text-[11px] text-gray-400 tabular-nums font-medium" id="sl-dl-count"></span>
-      </a>
-
-      <a data-view="extracted" class="sidelink flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-gray-500" href="#">
-        <div class="flex items-center gap-2.5">
-          <span class="w-2 h-2 rounded-full bg-violet-400 shrink-0"></span>
-          <span class="text-[12.5px]">Extraction</span>
-        </div>
-        <span class="text-[11px] text-gray-400 tabular-nums font-medium" id="sl-ex-count"></span>
-      </a>
-
-      <div class="h-px bg-gray-100 my-1 mx-1"></div>
-
-      <a data-view="wip" class="sidelink flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-gray-500" href="#">
-        <div class="flex items-center gap-2.5">
-          <span class="material-symbols-outlined text-amber-400" style="font-size:15px;">hourglass_top</span>
-          <span class="text-[12.5px] text-amber-700 font-medium">LF In Progress</span>
-        </div>
-        <span class="text-[11px] text-amber-500 tabular-nums font-semibold" id="sl-wip-count"></span>
-      </a>
-
-    </nav>
-
-    <!-- Progress footer -->
-    <div class="p-4 border-t border-gray-100 shrink-0">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider">Progress</span>
-        <span class="text-[11px] font-bold text-gray-800 tabular-nums" id="progress-pct-sidebar">0%</span>
-      </div>
-      <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div id="progress-bar-fill" class="h-full bg-gray-800 rounded-full bar-fill" style="width:0%"></div>
-      </div>
-      <p class="text-[10.5px] text-gray-400 mt-1.5 tabular-nums" id="progress-text">0 / 0 completed</p>
-    </div>
-
-  </aside>
-
-
-  <!-- ══════════════════════
        MAIN CONTENT
   ══════════════════════ -->
   <main id="main-content" class="flex-1 flex flex-col min-h-0 overflow-hidden bg-gray-50">
@@ -331,7 +270,7 @@
       <!-- Header Bar -->
       <div class="h-[50px] bg-white border-b border-gray-200 flex items-center justify-between px-5 sticky top-0 z-30 shrink-0">
         <div class="flex items-center gap-3">
-          <h1 class="text-[13px] font-semibold text-gray-900">Operational Grid</h1>
+          <h1 class="text-[13px] font-semibold text-gray-900">Remaining Elections</h1>
           <span class="text-[11px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md tabular-nums" id="record-count-badge">— records</span>
         </div>
 
@@ -357,59 +296,72 @@
         </div>
       </div>
 
-      <!-- Pipeline Strip -->
-      <div class="px-5 py-3 bg-white border-b border-gray-100 shrink-0">
-        <div class="flex items-stretch gap-2 mb-2.5">
-          <button id="kpi-total-remaining" onclick="handleKpiClick('remaining')"
-            class="kpi-card group flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-all text-left bg-slate-50 hover:bg-slate-100">
-            <span class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0 group-hover:bg-slate-600 transition-colors"></span>
-            <div class="min-w-0 flex-1">
-              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Remaining</p>
-              <p class="text-[18px] font-black text-slate-700 leading-tight tabular-nums" id="kpi-tr-count">—</p>
-              <p class="text-[9px] text-slate-400 tabular-nums leading-tight mt-0.5" id="kpi-tr-acs"></p>
-            </div>
-          </button>
-          <span class="text-gray-300 font-bold text-base self-center shrink-0">→</span>
-          <button id="kpi-missing" onclick="handleKpiClick('missing')"
-            class="kpi-card group flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-gray-200 hover:border-red-200 transition-all text-left bg-gray-50 hover:bg-red-50">
-            <span class="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0 group-hover:bg-red-400 transition-colors"></span>
-            <div class="min-w-0 flex-1">
-              <p class="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Non-Downloaded</p>
-              <p class="text-[18px] font-black text-gray-700 leading-tight tabular-nums" id="kpi-mi-count">—</p>
-              <p class="text-[9px] text-gray-400 tabular-nums leading-tight mt-0.5" id="kpi-mi-acs"></p>
-            </div>
-          </button>
-          <span class="text-gray-300 font-bold text-base self-center shrink-0">→</span>
-          <button id="kpi-downloaded" onclick="handleKpiClick('downloaded')"
-            class="kpi-card group flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-blue-100 hover:border-blue-200 transition-all text-left bg-blue-50/40 hover:bg-blue-50">
-            <span class="w-1.5 h-1.5 rounded-full bg-blue-300 shrink-0 group-hover:bg-blue-500 transition-colors"></span>
-            <div class="min-w-0 flex-1">
-              <p class="text-[9px] font-bold text-blue-400 uppercase tracking-wider">Downloaded</p>
-              <p class="text-[18px] font-black text-blue-700 leading-tight tabular-nums" id="kpi-dl-count">—</p>
-              <p class="text-[9px] text-blue-400 tabular-nums leading-tight mt-0.5" id="kpi-dl-acs"></p>
-            </div>
-          </button>
-          <span class="text-gray-300 font-bold text-base self-center shrink-0">→</span>
-          <button id="kpi-extracted" onclick="handleKpiClick('extracted')"
-            class="kpi-card group flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-violet-100 hover:border-violet-200 transition-all text-left bg-violet-50/40 hover:bg-violet-50">
-            <span class="w-1.5 h-1.5 rounded-full bg-violet-300 shrink-0 group-hover:bg-violet-500 transition-colors"></span>
-            <div class="min-w-0 flex-1">
-              <p class="text-[9px] font-bold text-violet-400 uppercase tracking-wider">Extracted</p>
-              <p class="text-[18px] font-black text-violet-700 leading-tight tabular-nums" id="kpi-ex-count">—</p>
-              <p class="text-[9px] text-violet-400 tabular-nums leading-tight mt-0.5" id="kpi-ex-acs"></p>
-            </div>
-          </button>
-          <div class="ml-1 flex flex-col justify-center items-end shrink-0 pl-4 border-l border-gray-100">
-            <span class="text-[24px] font-black text-gray-800 tabular-nums leading-none" id="listing-pct">0%</span>
-            <span class="text-[9.5px] text-gray-400 font-medium mt-0.5">complete</span>
+      <!-- Pipeline Stage KPI Cards -->
+      <div class="px-5 py-3 bg-white border-b border-gray-200 grid grid-cols-2 md:grid-cols-5 gap-3 shrink-0">
+        <a data-view="all" class="sidelink sl-active kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+          <div class="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-gray-500" style="font-size:18px;">list_alt</span>
           </div>
-        </div>
-        <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div id="listing-prog-bar" class="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full bar-fill" style="width:0%"></div>
-        </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">All Remaining</p>
+            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-all-count">—</p>
+          </div>
+        </a>
+
+        <a data-view="missing" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-red-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+          <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center shrink-0 group-hover:bg-red-100 transition-colors">
+            <span class="material-symbols-outlined text-red-400" style="font-size:18px;">error_outline</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Not Downloaded</p>
+            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-mi-count">—</p>
+          </div>
+        </a>
+
+        <a data-view="downloaded" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+          <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+            <span class="material-symbols-outlined text-blue-500" style="font-size:18px;">download_done</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Downloaded</p>
+            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-dl-count">—</p>
+          </div>
+        </a>
+
+        <a data-view="extracted" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-violet-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+          <div class="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition-colors">
+            <span class="material-symbols-outlined text-violet-500" style="font-size:18px;">database</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Extracted</p>
+            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-ex-count">—</p>
+          </div>
+        </a>
+
+        <a data-view="wip" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-amber-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+          <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition-colors">
+            <span class="material-symbols-outlined text-amber-400" style="font-size:18px;">hourglass_top</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">LF In Progress</p>
+            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-wip-count">—</p>
+          </div>
+        </a>
       </div>
 
-      <!-- Back to States header (hidden by default) -->
+      <!-- Overall Progress strip -->
+      <div class="px-5 py-2.5 bg-white border-b border-gray-100 flex items-center gap-3 shrink-0">
+        <span class="text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider shrink-0">Progress</span>
+        <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden flex">
+          <div id="seg-completed"  class="h-full bg-emerald-500 bar-fill"></div>
+          <div id="seg-extracted"  class="h-full bg-violet-400 bar-fill"></div>
+          <div id="seg-downloaded" class="h-full bg-blue-400 bar-fill"></div>
+        </div>
+        <span class="text-[12px] font-bold text-gray-900 tabular-nums shrink-0" id="progress-pct-sidebar">0%</span>
+        <span class="text-[10.5px] text-gray-500 tabular-nums shrink-0" id="progress-text">0 / 0 completed</span>
+      </div>
+
+      <!-- Back to States bar (only visible in state detail mode) -->
       <div id="detail-header" class="hidden h-[40px] bg-gray-50 border-b border-gray-200 flex items-center px-5 shrink-0">
         <button onclick="goBackToStates()" class="flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
           <span class="material-symbols-outlined" style="font-size:13px;">arrow_back</span>
@@ -422,23 +374,28 @@
         </span>
       </div>
 
-      <!-- Data Table -->
+      <!-- Single scroll surface: the table and footer scroll together; only the
+           50px toolbar above stays fixed. Table header is sticky. Per-stage counts
+           and overall progress live in the sidebar (their single source) — not
+           repeated here. -->
       <div class="flex-1 overflow-auto custom-scrollbar">
         <div class="min-h-full flex flex-col">
+
+          <!-- Data Table -->
           <table class="w-full text-left border-collapse min-w-[900px]">
+            <!-- Header is rendered dynamically by renderTable() for the states /
+                 detail views; this static header is only the pre-JS placeholder. -->
             <thead id="table-head" class="sticky top-0 bg-white border-b border-gray-200 z-20">
             <tr>
-              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="state">Record ID</th>
-              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Location</th>
-              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="assigned_to">Assigned To</th>
-              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 sortable" data-col="last_updated">Updated</th>
-              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Actions</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">State</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Remaining</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Pipeline</th>
+              <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Open</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-50" id="table-body">
             <tr>
-              <td colspan="7" class="px-5 py-12 text-center">
+              <td colspan="4" class="px-5 py-12 text-center">
                 <div class="flex flex-col items-center gap-2 text-gray-400">
                   <span class="material-symbols-outlined animate-spin" style="font-size:22px;">refresh</span>
                   <span class="text-[12px]">Loading records…</span>
@@ -447,23 +404,17 @@
             </tr>
           </tbody>
         </table>
+
+          <!-- Result count -->
+          <div class="px-5 py-2.5 border-t border-gray-100 min-w-[900px]">
+            <span class="text-[11.5px] text-gray-500 font-medium" id="pagination-text">Loading…</span>
+          </div>
+
+          <!-- Web Application Footer -->
+          <div class="mt-auto w-full min-w-[900px]">
+            {% include '_footer.html' %}
+          </div>
         </div>
-
-        <!-- Web Application Footer -->
-        <footer class="mt-auto border-t border-gray-200 py-6 px-8 flex flex-col md:flex-row items-center justify-between gap-4 bg-transparent text-[12px] text-gray-500 shrink-0 w-full min-w-[900px]">
-          <div>
-            &copy; 2026 Project Classroom. All rights reserved.
-          </div>
-          <div class="flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-gray-400" style="font-size:14px;">mail</span>
-            <span>For feedback, corrections or queries please contact <a href="mailto:mayur.deshpande@varaheanalytics" class="font-medium text-gray-700 hover:text-indigo-600 transition-colors">mayur.deshpande@varaheanalytics</a></span>
-          </div>
-        </footer>
-      </div>
-
-      <!-- Pagination Footer -->
-      <div class="bg-white border-t border-gray-200 px-5 py-2.5 flex items-center justify-between shrink-0">
-        <span class="text-[11.5px] text-gray-500 font-medium" id="pagination-text">Showing 0 records</span>
       </div>
 
     </div><!-- /listing-view -->
@@ -493,7 +444,7 @@
       </div>
 
       <!-- ── Dashboard content ──────────────────────── -->
-      <div class="p-5 pb-10 flex-1 min-h-[calc(100vh-48px)]">
+      <div class="p-5 pb-10 flex-1">
 
         <!-- ══ Executive KPI ribbon ══ -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
@@ -664,6 +615,8 @@
 
       </div><!-- /dashboard content -->
 
+      {% include '_footer.html' %}
+
     </div><!-- /dashboard-view -->
 
 
@@ -680,23 +633,27 @@
           <span class="text-[11px] font-semibold bg-indigo-50 text-indigo-600 px-2.5 py-0.5 rounded-full tabular-nums" id="glance-panel-count">— records</span>
         </div>
         <div class="flex items-center gap-1.5">
-          <input type="date" id="glance-date-filter" class="sel" title="Select a date to view its week">
-          <select id="glance-state-filter" class="sel">
-            <option value="">All States</option>
-          </select>
-          <select id="glance-type-filter" class="sel">
-            <option value="">All Types</option>
-          </select>
-          <div class="w-px h-4 bg-gray-200 mx-0.5"></div>
-          <button id="glance-pdf-btn" class="h-7 px-2.5 text-[12px] font-semibold border border-indigo-600 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all flex items-center gap-1.5 select-none">
-            <span class="material-symbols-outlined" style="font-size:14px;">picture_as_pdf</span>
-            Download PDF
-          </button>
+          <input type="hidden" id="glance-date-filter" value="">
+          <div class="relative">
+            <button id="glance-cal-btn" class="h-8 pl-2.5 pr-3 rounded-xl text-[12px] font-semibold text-white flex items-center gap-2 select-none shadow-sm hover:shadow-md transition-all duration-200"
+              style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#d946ef 100%);">
+              <span class="material-symbols-outlined" style="font-size:16px;">calendar_month</span>
+              <span id="glance-cal-label">This Week</span>
+              <span class="material-symbols-outlined" style="font-size:14px;">expand_more</span>
+            </button>
+            <div id="glance-cal-popup" class="hidden absolute right-0 top-[calc(100%+8px)] z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 w-[280px]"></div>
+          </div>
         </div>
       </div>
 
+      <!-- Week picker strip -->
+      <div class="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center gap-2 sticky top-[50px] z-10 shrink-0">
+        <span class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">Week</span>
+        <div id="glance-week-picker" class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar flex-1 py-0.5"></div>
+      </div>
+
       <!-- Analytics content -->
-      <div class="p-5 flex flex-col gap-4 pb-10 flex-1 min-h-[calc(100vh-50px)]">
+      <div class="p-5 flex flex-col gap-4 pb-10">
 
         <!-- Summary stat strip -->
         <div class="grid grid-cols-4 gap-3">
@@ -752,7 +709,7 @@
           <div class="col-span-2 card p-4">
             <div class="flex items-center justify-between mb-4">
               <p class="text-[12.5px] font-semibold text-gray-900">State Performance</p>
-              <span class="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">by records</span>
+              <span class="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">this week</span>
             </div>
             <div class="relative" style="height:200px">
               <canvas id="glanceStateChart"></canvas>
@@ -764,7 +721,7 @@
         <div class="card p-4">
           <div class="flex items-center justify-between mb-3">
             <p class="text-[12.5px] font-semibold text-gray-900">Election Type Distribution</p>
-            <span class="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">share of pushed records</span>
+            <span class="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">this week</span>
           </div>
           <div id="glance-type-bars" class="flex flex-col gap-2.5"></div>
         </div>
@@ -783,7 +740,7 @@
           <div class="flex items-center justify-between mb-2.5 px-1">
             <div>
               <p class="text-[12.5px] font-semibold text-gray-900">State-wise DB Push Summary</p>
-              <p class="text-[11px] text-gray-400 mt-0.5">Elections completed per state · Last 4 weeks trend</p>
+              <p class="text-[11px] text-gray-400 mt-0.5">Elections completed this week, per state · Last 4 weeks trend</p>
             </div>
           </div>
           <div id="glance-panel-accordion" class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
@@ -796,16 +753,7 @@
 
       </div>
 
-      <!-- Web Application Footer -->
-      <footer class="mt-auto border-t border-gray-200 py-6 px-8 flex flex-col md:flex-row items-center justify-between gap-4 bg-transparent text-[12px] text-gray-500 shrink-0">
-        <div>
-          &copy; 2026 Project Classroom. All rights reserved.
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="material-symbols-outlined text-gray-400" style="font-size:14px;">mail</span>
-          <span>For feedback, corrections or queries please contact <a href="mailto:mayur.deshpande@varaheanalytics" class="font-medium text-gray-700 hover:text-indigo-600 transition-colors">mayur.deshpande@varaheanalytics</a></span>
-        </div>
-      </footer>
+      {% include '_footer.html' %}
     </div><!-- /glance-view -->
 
   </main>
@@ -839,7 +787,7 @@
       <div>
         <label class="block text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Status</label>
         <select id="edit-status" class="w-full h-9 text-[13px] font-medium text-gray-800 border border-gray-200 bg-gray-50 rounded-lg focus:bg-white focus:border-gray-400 px-3 outline-none transition-all cursor-pointer">
-          <option value="missing">Remaining</option>
+          <option value="missing">Not Downloaded</option>
           <option value="downloaded">Downloaded</option>
           <option value="extracted">Extracted</option>
           <option value="db_pushed">DB Pushed</option>

@@ -1,0 +1,2 @@
+imported
+conn: <connection object at 0x00000216A74E1BE0; dsn: 'user=mayur_de password=xxx connect_timeout=20 dbname=votexdb host=org-db.cgtvjodbp1rf.ap-south-1.rds.amazonaws.com port=5432 keepalives=1 keepalives_idle=30 keepalives_interval=10 keepalives_count=3', closed: 0>
