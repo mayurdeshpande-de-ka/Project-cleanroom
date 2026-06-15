@@ -1,0 +1,16 @@
+name: Diagnostics 2
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Diagnostics on EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: 13.206.145.98
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cat /etc/systemd/system/form20-dashboard.service
