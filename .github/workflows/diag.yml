@@ -1,0 +1,25 @@
+name: Diagnostics
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Diagnostics on EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: 13.206.145.98
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "--- NGINX STATUS ---"
+            sudo systemctl status nginx --no-pager
+            echo "--- APP STATUS ---"
+            sudo systemctl status form20-dashboard.service --no-pager
+            echo "--- APP LOGS ---"
+            sudo journalctl -u form20-dashboard.service -n 50 --no-pager
+            echo "--- NGINX ACCESS LOG ---"
+            sudo tail -n 20 /var/log/nginx/access.log
+            echo "--- NGINX ERROR LOG ---"
+            sudo tail -n 20 /var/log/nginx/error.log
