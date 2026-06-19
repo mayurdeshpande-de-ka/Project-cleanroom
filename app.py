@@ -557,6 +557,20 @@ def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
 
     key = f"{str(r_dict['state']).strip()}-{str(r_dict['el_type']).strip()}-{str(r_dict['el_year']).strip()}"
 
+    # An election is genuinely "in the Form 20 DB" only when its (state, el_type,
+    # el_year) tuple is present in the live Form 20 snapshot. el_type is NOT stripped,
+    # so AE and AE-BP are treated as distinct elections.
+    is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+
+    # A manual / stale db_pushed|completed status that ISN'T backed by real DB
+    # presence must never count as done — otherwise marking a record "DB Pushed"
+    # would wrongly remove it from the backlog (e.g. TN AE 2026, set to DB Pushed
+    # but absent from Form 20). Demote it to its real pipeline stage so it stays in
+    # the backlog with an accurate badge and the per-stage counts stay consistent.
+    if not is_live_completed and r_dict.get('overall_status') in ('db_pushed', 'completed'):
+        dl = download_report.get(key) or r_dict.get('download_status') or 'missing'
+        r_dict['overall_status'] = 'downloaded' if dl == 'downloaded' else 'missing'
+
     current_status = r_dict.get('overall_status')
 
     # 1. Apply download report status if present
@@ -567,11 +581,8 @@ def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
         if csv_status == 'missing' and current_status in ('downloaded', 'pending'):
             r_dict['overall_status'] = 'missing'
 
-    # 2. Apply live (Form 20) status if present. A unique election is matched on the
-    #    full (state, el_type, el_year) — el_type is NOT stripped, so AE and AE-BP are
-    #    treated as distinct elections. Any election present in Form 20 is complete and
-    #    is hidden from the Listing page.
-    is_live_completed = (str(r_dict['state']).strip(), str(r_dict['el_type']).strip(), str(r_dict['el_year']).strip()) in live_extracted
+    # 2. Apply live (Form 20) status if present. Any election present in Form 20 is
+    #    complete and is hidden from the Listing page.
     if is_live_completed:
         r_dict['overall_status'] = 'db_pushed'
         r_dict['db_status'] = 'in_db'
@@ -677,7 +688,10 @@ def get_records():
         r_dict = dict(r)
         r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
 
-        # HIDE COMPLETED RECORDS ENTIRELY FROM THE LIST PAGE
+        # HIDE only records that are GENUINELY in the Form 20 DB. After
+        # apply_dynamic_status, overall_status is 'db_pushed' iff the election is
+        # actually present in Form 20 (manual/stale db_pushed has been demoted), so
+        # this never removes a row merely because its status was set to DB Pushed.
         if r_dict['overall_status'] in ('db_pushed', 'completed'):
             continue
 
@@ -721,9 +735,11 @@ def update_record(record_id):
     history = get_completion_history()
     r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
 
-    # ── Stamp completion history only on explicit manual push ────────────────
-    new_status = updates.get('overall_status', '')
-    if new_status in ('db_pushed', 'completed'):
+    # ── Stamp completion history only on REAL completion ─────────────────────
+    # Use the post-apply_dynamic_status status: it is only 'db_pushed'/'completed'
+    # when the election is genuinely in the Form 20 DB. A manual "DB Pushed" on an
+    # election that isn't in Form 20 gets demoted, so it never stamps history.
+    if r_dict.get('overall_status') in ('db_pushed', 'completed'):
         key = f"{r_dict['state']}-{r_dict['el_type']}-{r_dict['el_year']}"
         if key not in history:
             history[key] = datetime.now().strftime('%Y-%m-%d')
@@ -1229,11 +1245,48 @@ def build_analytics_cache():
             result['mapping_entries'] = 0
             result['mapping_by_type'] = {}
 
-        # ── 2 & 3. Booth metadata / Voter roll — SKIPPED ──────────────────────
-        # These cards were removed from the dashboard, so we no longer scan the
-        # two largest RDS tables (booth_metadata, voter_details) on every refresh.
-        # Keys are kept (available:False) so any cached/older client stays safe.
-        result['booth']      = {'available': False, 'error': 'not tracked'}
+        # ── 2. Booth metadata — state-wise AC coverage ────────────────────────
+        # Single aggregate pass over booth_metadata_full_view: distinct ACs,
+        # booths and voters per state. Mirrors the caste card's AC-coverage view
+        # (covered ACs out of each state's canonical STATE_AC_COUNTS total).
+        rows, err = _rds_query(cur, '''
+            SELECT state_abb, COUNT(DISTINCT ac_no), COUNT(*), SUM(total_voters)
+            FROM booth_metadata_full_view GROUP BY state_abb ORDER BY 2 DESC
+        ''')
+        if rows is not None and not err:
+            covered_by_state = {str(r[0]).strip(): int(r[1] or 0) for r in rows if r[0]}
+            booths_total = sum(int(r[2] or 0) for r in rows)
+            voters_total = sum(int(r[3] or 0) for r in rows)
+            acs_with_data = sum(covered_by_state.values())
+            states_with_data = len(covered_by_state)
+
+            state_progress = []
+            for st, total_acs in STATE_AC_COUNTS.items():
+                covered = covered_by_state.get(st, 0)
+                state_progress.append({
+                    'state': st,
+                    'acs': covered,
+                    'total_acs': total_acs,
+                    'pct': round((covered / total_acs) * 100) if total_acs else 0,
+                })
+            state_progress.sort(key=lambda s: (-s['pct'], -s['acs']))
+
+            total_acs_all = sum(STATE_AC_COUNTS.values())
+            result['booth'] = {
+                'available': True,
+                'states': states_with_data,
+                'acs_with_data': acs_with_data,
+                'total_booths': booths_total,
+                'total_voters': voters_total,
+                'state_progress': state_progress,
+                'total_acs_all': total_acs_all,
+                'coverage_pct_all': round((acs_with_data / total_acs_all) * 100) if total_acs_all else 0,
+            }
+        else:
+            result['booth'] = {'available': False, 'error': err}
+
+        # ── 3. Voter roll — SKIPPED ───────────────────────────────────────────
+        # The voter_details scan stays off (largest RDS table, no card for it).
         result['voter_roll'] = {'available': False, 'error': 'not tracked'}
 
         # ── 4. Caste details ──────────────────────────────────────────────────
@@ -1403,12 +1456,14 @@ def form20_card_stats():
 
     # Top states by AC completion count
     state_counts = {}
+    state_pcts = {}
     for state, den in acpc_ac_counts.items():
         num = form20_ac_counts.get(state, 0)
-        pct = (num / den) * 100 if den > 0 else 0
         state_counts[state] = num
+        state_pcts[state] = round((num / den) * 100) if den > 0 else 0
 
-    top_states = [{'state': s, 'count': c} for s, c in sorted(state_counts.items(), key=lambda item: item[1], reverse=True)[:10]]
+    top_states = [{'state': s, 'count': c, 'pct': state_pcts.get(s, 0)}
+                  for s, c in sorted(state_counts.items(), key=lambda item: item[1], reverse=True)[:10]]
 
     # ── Missing entries ─────────────
     missing_acs = total_mapping_acs - total_form20_acs

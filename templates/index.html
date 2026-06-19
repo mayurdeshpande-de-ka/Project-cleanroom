@@ -213,7 +213,7 @@
     <!-- Tabs -->
     <div class="hidden md:flex items-center h-full">
       <a id="nav-dashboard" class="nav-tab active h-full px-3 flex items-center text-[13px] cursor-pointer select-none">Dashboard</a>
-      <a id="nav-listing"   class="nav-tab        h-full px-3 flex items-center text-[13px] cursor-pointer select-none">Listing</a>
+      <a id="nav-listing"   class="nav-tab        h-full px-3 flex items-center text-[13px] cursor-pointer select-none">Backlog Tracker</a>
       <a id="nav-retro"     class="nav-tab        h-full px-3 flex items-center text-[13px] cursor-pointer select-none">Retro Export</a>
       <a id="nav-glance"    class="nav-tab        h-full px-3 flex items-center gap-1.5 text-[13px] cursor-pointer select-none">
         <span class="material-symbols-outlined text-gray-400" style="font-size:14px;">fact_check</span>
@@ -529,7 +529,8 @@
             </div>
             <!-- Top completed states -->
             <div class="px-4 py-3">
-              <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Top Completed States</p>
+              <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Top States · ACs in Form 20</p>
+              <p class="text-[9px] text-gray-300 mb-2.5">Number = ACs with Form 20 results</p>
               <div id="f20-state-rows" class="grid grid-cols-4 gap-1.5"></div>
             </div>
           </div>
@@ -579,7 +580,8 @@
               </div>
             </div>
             <div class="px-4 py-3">
-              <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Top States</p>
+              <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Top States · ACs in DB</p>
+              <p class="text-[9px] text-gray-300 mb-2.5">Number = ACs with results · % = coverage of expected</p>
               <div id="retro-state-rows" class="grid grid-cols-4 gap-1.5"></div>
             </div>
           </div>
@@ -607,6 +609,33 @@
             </div>
           </div>
           <div id="caste-body" class="flex-1 flex flex-col">
+            <div class="flex-1 flex items-center justify-center py-16">
+              <span class="material-symbols-outlined animate-spin text-gray-200" style="font-size:24px;">refresh</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Booth Details — full-width analytical showcase ══ -->
+        <div class="card card-lift overflow-hidden flex flex-col mt-4" id="panel-booth">
+          <div class="px-5 pt-4 pb-3 flex items-center justify-between border-b border-gray-50">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center shrink-0 shadow-sm">
+                <span class="material-symbols-outlined text-white" style="font-size:16px;">how_to_vote</span>
+              </div>
+              <div>
+                <p class="text-[13.5px] font-bold text-gray-900 leading-none">Booth Details</p>
+                <p class="text-[10.5px] text-gray-400 mt-0.5">AC coverage across <span id="booth-sub-states">—</span> states · booth_metadata_full_view</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[9.5px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                <span class="material-symbols-outlined" style="font-size:11px;">map</span>
+                <span id="booth-pct">—</span>
+              </span>
+              <span class="text-[9.5px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-full">Live</span>
+            </div>
+          </div>
+          <div id="booth-body" class="flex-1 flex flex-col">
             <div class="flex-1 flex items-center justify-center py-16">
               <span class="material-symbols-outlined animate-spin text-gray-200" style="font-size:24px;">refresh</span>
             </div>
@@ -899,33 +928,11 @@
 
 
 <!-- ═══════════════════════════════════
-     CONFIRM MODAL
-═══════════════════════════════════ -->
-<div id="confirm-overlay" class="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[110] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200">
-  <div class="bg-white rounded-2xl shadow-2xl w-[380px] max-w-[92vw] overflow-hidden scale-95 transition-transform duration-200 border border-gray-200 flex flex-col" id="confirm-card">
-    <div class="p-6 flex flex-col items-center text-center">
-      <div class="w-12 h-12 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
-        <span class="material-symbols-outlined text-red-500" style="font-size:22px;">warning</span>
-      </div>
-      <h3 class="text-[15px] font-bold text-gray-900 mb-1.5">Remove from Backlog?</h3>
-      <p class="text-[12.5px] text-gray-500 leading-relaxed max-w-[280px]">
-        Marking as <span class="font-semibold text-gray-800">DB Pushed</span> will permanently remove this record from the backlog view.
-      </p>
-    </div>
-    <div class="px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex gap-2">
-      <button id="confirm-cancel" class="flex-1 py-2 text-[12.5px] font-medium text-gray-600 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-lg transition-colors">Cancel</button>
-      <button id="confirm-proceed" class="flex-1 py-2 text-[12.5px] font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors">Yes, Push to DB</button>
-    </div>
-  </div>
-</div>
-
-
-<!-- ═══════════════════════════════════
      TOAST
 ═══════════════════════════════════ -->
 <div id="toast" class="fixed bottom-5 right-5 bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-lg text-[12.5px] font-medium transition-all duration-300 opacity-0 pointer-events-none translate-y-2 z-[200] flex items-center gap-2 max-w-xs">
 </div>
 
-<script src="/static/app.js?v=20260607"></script>
+<script src="/static/app.js?v=20260619c"></script>
 </body>
 </html>

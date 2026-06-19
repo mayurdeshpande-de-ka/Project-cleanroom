@@ -14,7 +14,6 @@ let toastTimer    = null;
 let searchTimer   = null;
 let retroMetadata = null;
 let filterMetadata = null;
-let confirmResolve = null;
 let currentView   = 'states';
 let currentDetailState = null;
 
@@ -54,6 +53,21 @@ const STATUS_CONFIG = {
   'db_pushed':  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400', label: 'DB Pushed' },
 };
 
+// Bucket a free-text "not downloaded" remark into one short, Status-column-friendly
+// label. Categories were derived from the actual recorded reasons; the full original
+// note is preserved as a hover tooltip. Order matters: specific checks first, then a
+// catch-all of "no usable ECI/CEO source".
+function reasonCategory(remark) {
+  const r = String(remark || '').trim().toLowerCase();
+  if (!r) return null;
+  if (r.includes('not in existence')) return 'Not in Existence';
+  if (r.includes('not present on drive') || r.includes('local pdf')) return 'Pending Drive Upload';
+  if (r.includes('not retrievable') || r.includes('http 500') ||
+      r.includes('url was unavailable') || r.includes('source url') ||
+      r.includes('returning http')) return 'Source Link Broken';
+  return 'Not Available on ECI';
+}
+
 // Canonical AC counts per state (from ac_mapping; same across years/types)
 const STATE_AC_COUNTS = {
   'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CG': 90,  'CT': 90,  'GA': 40,
@@ -65,7 +79,8 @@ const STATE_AC_COUNTS = {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadFilters();
-  loadDashboardStats();
+  // bindEvents() restores the last-viewed tab (default: Dashboard) and runs that
+  // view's data load, so we don't eagerly load the dashboard here.
   bindEvents();
 });
 
@@ -301,20 +316,25 @@ function renderTable() {
 
       return `
         <tr class="${rowClass} bg-white border-b border-gray-50 transition-colors" data-id="${rec.id}">
-          <td class="px-5 py-2.5 cursor-pointer" onclick="openModal(${rec.id})">
+          <td class="px-5 py-2.5 align-top cursor-pointer" onclick="openModal(${rec.id})">
             <p class="text-[12.5px] font-semibold text-gray-900 leading-tight">${x(rec.key)}</p>
             ${rec.is_sir_state ? '<p class="text-[11px] text-amber-600 font-medium mt-0.5">SIR Priority</p>' : ''}
           </td>
-          <td class="px-5 py-2.5">
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg} ${cfg.text} ${cfg.border}">
-              <span class="w-1.5 h-1.5 rounded-full ${cfg.dot} shrink-0"></span>
-              ${cfg.label}
-            </span>
+          <td class="px-5 py-2.5 align-top">
+            <div class="flex flex-col items-start gap-1">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg} ${cfg.text} ${cfg.border}">
+                <span class="w-1.5 h-1.5 rounded-full ${cfg.dot} shrink-0"></span>
+                ${cfg.label}
+              </span>
+              ${rec.overall_status === 'missing'
+                ? `<span class="text-[10.5px] text-gray-500 leading-tight" title="${x(rec.remark || '')}">${x(reasonCategory(rec.remark) || 'Reason not recorded')}</span>`
+                : ''}
+            </div>
           </td>
-          <td class="px-5 py-2.5">
+          <td class="px-5 py-2.5 align-top">
             <p class="text-[12.5px] font-medium text-gray-700">${x(EL_TYPE_NAMES[String(rec.el_type).split('-')[0]] || rec.el_type)}${String(rec.el_type).includes('-BP') ? ' Bypoll' : ''} · ${rec.el_year}</p>
           </td>
-          <td class="px-5 py-2.5 text-right">
+          <td class="px-5 py-2.5 align-top text-right">
             <div class="flex items-center justify-end gap-1.5">
               <button class="btn-wip flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-colors
                 ${rec.wip
@@ -423,10 +443,6 @@ function closeModal() {
 async function saveModal() {
   if (!editingId) return;
   const newStatus = document.getElementById('edit-status').value;
-  if (newStatus === 'db_pushed') {
-    const confirmed = await showConfirmModal();
-    if (!confirmed) return;
-  }
   const body = {
     overall_status: newStatus,
     remark: document.getElementById('edit-remark').value.trim() || null,
@@ -638,28 +654,7 @@ function updateRetroCountLocal() {
   }
 }
 
-function showConfirmModal() {
-  return new Promise(resolve => {
-    const overlay = document.getElementById('confirm-overlay');
-    const card    = document.getElementById('confirm-card');
-    overlay.classList.remove('opacity-0', 'pointer-events-none');
-    card.classList.remove('scale-95'); card.classList.add('scale-100');
-    confirmResolve = resolve;
-  });
-}
-
-function closeConfirmModal(result) {
-  const overlay = document.getElementById('confirm-overlay');
-  const card    = document.getElementById('confirm-card');
-  overlay.classList.add('opacity-0', 'pointer-events-none');
-  card.classList.remove('scale-100'); card.classList.add('scale-95');
-  if (confirmResolve) { confirmResolve(result); confirmResolve = null; }
-}
-
 function bindEvents() {
-  document.getElementById('confirm-cancel').addEventListener('click',  () => closeConfirmModal(false));
-  document.getElementById('confirm-proceed').addEventListener('click', () => closeConfirmModal(true));
-
   document.getElementById('filter-state').addEventListener('change', e => {
     filters.state   = e.target.value;
     filters.el_type = '';
@@ -752,7 +747,8 @@ function bindEvents() {
         nav.classList.remove('active');
       }
     });
-
+    // Remember the active tab so a browser reload restores the same page.
+    try { localStorage.setItem('activeTab', activeId); } catch (e) {}
   }
 
   navTabs.forEach(t => {
@@ -862,6 +858,18 @@ function bindEvents() {
       loadStats(); loadRecords();
     });
   }
+
+  // ── Restore the last-viewed tab across reloads ───────────────────────────
+  // Runs last, after every view's handlers are wired. Defaults to Dashboard.
+  // Retro Export is a modal (not a persistent view), so it is never stored here
+  // and never re-opened on reload.
+  const PERSIST_TABS = new Set(navTabs.map(t => t.id));
+  let startTab = 'nav-dashboard';
+  try {
+    const saved = localStorage.getItem('activeTab');
+    if (saved && PERSIST_TABS.has(saved)) startTab = saved;
+  } catch (e) {}
+  switchTab(startTab);
 }
 
 
@@ -877,6 +885,7 @@ async function loadDashboardAnalytics(forceRefresh = false) {
     const d = await res.json();
     renderRetroPanel(d.retro);
     renderCastePanel(d.caste);
+    renderBoothPanel(d.booth);
     if (_firstLoad) {
       _firstLoad = false;
       // Optionally trigger a silent background sync of Form 20 cache
@@ -978,6 +987,7 @@ function renderForm20Panel(stats) {
         <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5">
           <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
           <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${s.completed}</span>
+          <span class="text-[9px] text-gray-400 leading-none">elections</span>
         </div>`;
     }).join('');
   }
@@ -1061,9 +1071,8 @@ function renderRetroPanel(r) {
       const tc = intensity >= 8 ? 'text-indigo-700' : intensity >= 5 ? 'text-indigo-600' : 'text-gray-600';
       return `
         <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.available)} / ${fmtNum(s.expected)} ACs (${s.pct}%)">
-          <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
-          <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.available)}</span>
-          <span class="text-[9px] text-gray-400 tabular-nums leading-none">${s.pct}%</span>
+          <span class="text-[11px] font-bold ${tc}">${s.state} - ${s.pct}%</span>
+          <span class="text-[10px] font-semibold text-gray-600 tabular-nums leading-none">AC - ${fmtNum(s.available)}</span>
         </div>`;
     }).join('');
   }
@@ -1192,6 +1201,90 @@ function renderCastePanel(d) {
     </div>`;
 }
 
+// ── Booth Details panel — state-wise AC coverage (mirrors the Caste card) ─────
+function renderBoothPanel(d) {
+  const pctEl       = document.getElementById('booth-pct');
+  const subStatesEl = document.getElementById('booth-sub-states');
+  const body        = document.getElementById('booth-body');
+
+  if (!d || !d.available) {
+    if (pctEl) pctEl.textContent = '—';
+    if (body)  body.innerHTML = _lockHTML(d?.error);
+    return;
+  }
+
+  const acsCovered      = d.acs_with_data || 0;
+  const coveragePctAll  = d.coverage_pct_all || 0;
+  const totalAcsAll     = d.total_acs_all || 0;
+  const stateProgress   = d.state_progress || [];
+
+  if (pctEl)       pctEl.textContent = coveragePctAll + '% AC coverage';
+  if (subStatesEl) subStatesEl.textContent = fmtNum(d.states);
+
+  if (!body) return;
+
+  const circ = 163.4;
+  const dash = circ * (1 - Math.min(coveragePctAll, 100) / 100);
+  const topStates = [...stateProgress].sort((a, b) => b.acs - a.acs).slice(0, 10);
+  const maxTopAc  = topStates[0]?.acs || 1;
+
+  body.innerHTML = `
+    <div class="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 fade-up">
+
+      <!-- LEFT: Ring + KPIs -->
+      <div class="lg:col-span-4 flex flex-col gap-2.5">
+        <div class="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-3 flex items-center gap-3">
+          <div class="relative shrink-0 w-[64px] h-[64px]">
+            <svg width="64" height="64" viewBox="0 0 64 64" class="-rotate-90">
+              <circle cx="32" cy="32" r="26" fill="none" stroke="#e5e7eb" stroke-width="6"/>
+              <circle cx="32" cy="32" r="26" fill="none" stroke="#3b82f6" stroke-width="6"
+                stroke-dasharray="${circ}" stroke-dashoffset="${dash}" stroke-linecap="round"
+                style="transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)"/>
+            </svg>
+            <span class="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-gray-700">${coveragePctAll}%</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-[20px] font-black tabular-nums leading-none text-blue-600">${coveragePctAll}%</p>
+            <p class="text-[10px] text-gray-400 font-medium mt-0.5">complete</p>
+            <p class="text-[10.5px] text-gray-500 tabular-nums mt-0.5 font-medium">${fmtNum(acsCovered)} / ${fmtNum(totalAcsAll)} ACs</p>
+          </div>
+        </div>
+        ${[
+          { v: fmtNum(totalAcsAll),      l: 'Total ACs',           c: 'text-gray-900', i: 'map' },
+          { v: fmtNum(acsCovered),       l: 'ACs with Booth Data', c: 'text-blue-600', i: 'how_to_vote' },
+          { v: fmtNum(d.total_booths),   l: 'Booths',              c: 'text-gray-900', i: 'location_on' },
+        ].map(k => `
+          <div class="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-3 flex items-center gap-3">
+            <span class="material-symbols-outlined text-gray-300" style="font-size:18px;">${k.i}</span>
+            <div>
+              <p class="text-[20px] font-black tabular-nums leading-none ${k.c}">${k.v}</p>
+              <p class="text-[9.5px] text-gray-400 font-medium mt-1 uppercase tracking-wide">${k.l}</p>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- RIGHT: State-wise AC coverage, pill grid -->
+      <div class="lg:col-span-8 flex flex-col">
+        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Top 10 States — AC Coverage (DB vs Total)</p>
+        <div class="grid grid-cols-5 gap-1.5">
+          ${topStates.map(s => {
+            const intensity = Math.round((s.acs / maxTopAc) * 9) + 1;
+            const bg = intensity >= 8 ? 'bg-blue-100 border-blue-200' :
+                       intensity >= 5 ? 'bg-blue-50 border-blue-100' : 'bg-gray-50 border-gray-100';
+            const tc = intensity >= 8 ? 'text-blue-700' : intensity >= 5 ? 'text-blue-600' : 'text-gray-600';
+            return `
+              <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.acs)} / ${fmtNum(s.total_acs)} ACs (${s.pct}%)">
+                <span class="text-[10.5px] font-bold ${tc}">${s.state} · ${s.pct}%</span>
+                <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.acs)}</span>
+                <span class="text-[9px] text-gray-400 tabular-nums leading-none">/ ${fmtNum(s.total_acs)}</span>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+    </div>`;
+}
+
 async function loadDashboardStats() {
   try {
     const stats = await apiFetch('/api/stats?hide_bp=1');
@@ -1247,11 +1340,11 @@ function populateForm20Card(d) {
   setEl('f20-pct',       pct + '%');
   setEl('f20-pct-label', 'coverage');
   setEl('f20-pct-badge', pct + '% complete');
-  setEl('f20-counts',    `${form20.toLocaleString()} / ${acpc.toLocaleString()} elections in Form 20`);
+  setEl('f20-counts',    `${form20.toLocaleString()} / ${acpc.toLocaleString()} ACs in Form 20`);
 
   // Hero ribbon — pipeline coverage
   setEl('hero-pipeline',     pct + '%');
-  setEl('hero-pipeline-sub', `${form20.toLocaleString()} / ${acpc.toLocaleString()} elections`);
+  setEl('hero-pipeline-sub', `${form20.toLocaleString()} / ${acpc.toLocaleString()} ACs`);
 
   // Update globals so that we keep track of accurate totals
   _f20Total = form20;
@@ -1304,13 +1397,10 @@ function populateForm20Card(d) {
       const bg = intensity >= 8 ? 'bg-gray-100 border-gray-300' :
                  intensity >= 5 ? 'bg-gray-50 border-gray-200' : 'bg-gray-50 border-gray-100';
       const tc = intensity >= 8 ? 'text-gray-800' : 'text-gray-600';
-      const acCount = STATE_AC_COUNTS[s.state] ? `(${(s.count * STATE_AC_COUNTS[s.state]).toLocaleString()})` : '';
       return `
-        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5">
-          <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
-          <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">
-            ${s.count} <span class="text-[10px] font-semibold text-gray-500 tracking-tight ml-0.5">${acCount}</span>
-          </span>
+        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.count)} ACs (${s.pct ?? 0}%)">
+          <span class="text-[11px] font-bold ${tc}">${s.state} - ${s.pct ?? 0}%</span>
+          <span class="text-[10px] font-semibold text-gray-600 tabular-nums leading-none">AC - ${fmtNum(s.count)}</span>
         </div>`;
     }).join('');
   }
