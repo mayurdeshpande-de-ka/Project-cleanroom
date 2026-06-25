@@ -1334,6 +1334,51 @@ def build_analytics_cache():
         else:
             result['caste'] = {'available': False, 'error': err}
 
+        # ── 5. Save Snapshots to JSON ─────────────────────────────────────────
+        # The user requested to store Retro, Caste, and Booth data in EC2 JSON.
+        try:
+            snapshot_path = os.path.join(BASE_DIR, 'weekly_snapshots.json')
+            
+            # Read existing snapshots
+            snapshots = {}
+            if os.path.exists(snapshot_path):
+                with open(snapshot_path, 'r', encoding='utf-8') as f:
+                    snapshots = json.load(f)
+            
+            # Determine the current week's anchor key (Monday at 00:00:00)
+            now = datetime.now()
+            cur_week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            anchor_key = cur_week_start.isoformat()
+            
+            # Initialize anchor if it doesn't exist
+            if anchor_key not in snapshots:
+                snapshots[anchor_key] = {}
+                
+            # Extract totals
+            if result.get('retro', {}).get('available'):
+                retro_val = result['retro'].get('available_acs', 0)
+                if not snapshots[anchor_key].get('retro') and retro_val > 0:
+                    snapshots[anchor_key]['retro'] = retro_val
+            
+            if result.get('caste', {}).get('available'):
+                caste_val = result['caste'].get('acs_with_data', 0)
+                if not snapshots[anchor_key].get('caste') and caste_val > 0:
+                    snapshots[anchor_key]['caste'] = caste_val
+                    
+            if result.get('booth', {}).get('available'):
+                booth_val = result['booth'].get('acs_with_data', 0)
+                if not snapshots[anchor_key].get('booth') and booth_val > 0:
+                    snapshots[anchor_key]['booth'] = booth_val
+                    
+            # Save it back
+            with open(snapshot_path, 'w', encoding='utf-8') as f:
+                json.dump(snapshots, f, indent=2)
+                
+        except Exception as e:
+            print(f"Error saving weekly snapshot: {e}")
+
+        # ── End of Analytics Cache ────────────────────────────────────────────
+
     except Exception as e:
         print(f'build_analytics_cache error: {e}')
     finally:

@@ -20,7 +20,7 @@ jobs:
           REMOTE_HOST: 13.206.145.98
           REMOTE_USER: ec2-user
           TARGET: /home/ec2-user/Form20-backlog-tracker/
-          EXCLUDE: "/venv/, /env/, /.git/, *.db, *.json, *.csv, *.zip, *.log"
+          EXCLUDE: "/venv/, /env/, /.git/, *.db, weekly_snapshots.json, *.csv, *.zip, *.log"
 
       - name: Restart Service
         uses: appleboy/ssh-action@master
