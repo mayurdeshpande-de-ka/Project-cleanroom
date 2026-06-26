@@ -790,9 +790,17 @@ def get_stats():
     state_dict = {}
     type_dict  = {}
     year_dict  = {}   # el_year → {total, completed}
+    
+    # Exclude stale records not in the master RDS mapping (same as get_records)
+    acpc_keys = {f"{i['state']}-{i['el_type']}-{i['el_year']}"
+                 for i in (cache_get('acpc') or [])}
 
     for r in all_records:
         r_dict = dict(r)
+        
+        if acpc_keys and r_dict['key'] not in acpc_keys:
+            continue
+            
         r_dict = apply_dynamic_status(r_dict, live_extracted, download_report, history)
 
         state = r_dict['state']
