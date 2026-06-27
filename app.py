@@ -428,12 +428,23 @@ def fetch_live_json_sync():
 
             form20_keys = {f"{i['state']}-{i['el_type']}-{i['el_year']}" for i in extracted_list}
             completed = 0
+            history = get_completion_history()
+            history_updated = False
+
             for r in existing_recs:
-                if r['key'] in form20_keys and r['overall_status'] not in ('db_pushed', 'completed'):
-                    conn.execute(
-                        "UPDATE records SET overall_status = 'db_pushed', db_status = 'in_db', last_updated = ? WHERE key = ?",
-                        (today, r['key']))
-                    completed += 1
+                if r['key'] in form20_keys:
+                    if r['overall_status'] not in ('db_pushed', 'completed'):
+                        conn.execute(
+                            "UPDATE records SET overall_status = 'db_pushed', db_status = 'in_db', last_updated = ? WHERE key = ?",
+                            (today, r['key']))
+                        completed += 1
+                        
+                    if r['key'] not in history:
+                        history[r['key']] = today
+                        history_updated = True
+
+            if history_updated:
+                save_completion_history(history)
 
             if inserted > 0 or completed > 0:
                 conn.commit()
