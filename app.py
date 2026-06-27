@@ -1945,6 +1945,92 @@ def reload_database():
 
 
 
+@app.route('/api/weekly_momentum')
+def weekly_momentum():
+    """8-week momentum series + latest-week state table for the Weekly Report dashboard."""
+    # ── Weekly snapshots (retro/caste/booth per state per week) ──────────────
+    snapshot_path = os.path.join(BASE_DIR, 'weekly_snapshots.json')
+    snapshots = {}
+    if os.path.exists(snapshot_path):
+        try:
+            with open(snapshot_path, 'r', encoding='utf-8') as f:
+                snapshots = json.load(f)
+        except Exception:
+            pass
+
+    # ── Form20 weekly election counts (from completion_history) ──────────────
+    history = get_completion_history()
+    history.pop('_updated', None)
+
+    today_d = datetime.now().date()
+    cur_mon  = today_d - timedelta(days=today_d.weekday())
+
+    def _week_mon(date_str):
+        d = datetime.strptime(date_str, '%Y-%m-%d').date()
+        return (d - timedelta(days=d.weekday())).isoformat()
+
+    f20_by_week = {}
+    for key, date_str in history.items():
+        try:
+            wk = _week_mon(date_str)
+            f20_by_week[wk] = f20_by_week.get(wk, 0) + 1
+        except Exception:
+            pass
+
+    # Build 8-week series (oldest → newest)
+    weeks = [(cur_mon - timedelta(days=7 * i)).isoformat() for i in range(7, -1, -1)]
+
+    def _snap(wk):
+        return snapshots.get(wk, snapshots.get(wk + 'T00:00:00', {}))
+
+    series = []
+    for wk in weeks:
+        s = _snap(wk)
+        retro_by_st = s.get('retro', {})
+        caste_by_st = s.get('caste', {})
+        booth_by_st = s.get('booth', {})
+        series.append({
+            'week':        wk,
+            'f20':         f20_by_week.get(wk, 0),
+            'retro_total': sum(v for v in retro_by_st.values() if isinstance(v, (int, float))),
+            'caste_total': sum(v for v in caste_by_st.values() if isinstance(v, (int, float))),
+            'booth_total': sum(v for v in booth_by_st.values() if isinstance(v, (int, float))),
+        })
+
+    # ── State table: latest available snapshot ────────────────────────────────
+    latest_wk = max((k[:10] for k in snapshots), default=None) if snapshots else None
+    latest_snap = _snap(latest_wk) if latest_wk else {}
+    retro_st = latest_snap.get('retro', {})
+    caste_st = latest_snap.get('caste', {})
+    booth_st = latest_snap.get('booth', {})
+
+    # Form20 per-state: ACs in Form20 source (from live JSON, approximated by STATE_AC_COUNTS)
+    raw_live = _load_json_list(LIVE_EXTRACTED_JSON_PATH)
+    f20_by_state = {}
+    for item in raw_live:
+        st = str(item.get('state', '')).strip()
+        et = str(item.get('el_type', '')).strip()
+        if st and '-BP' not in et:
+            f20_by_state[st] = f20_by_state.get(st, 0) + STATE_AC_COUNTS.get(st, 0)
+
+    # Union of all states with any data
+    all_states = sorted(set(list(f20_by_state) + list(retro_st) + list(caste_st) + list(booth_st)))
+    state_table = []
+    for st in all_states:
+        f = f20_by_state.get(st, 0)
+        r = retro_st.get(st, 0) if isinstance(retro_st.get(st), (int, float)) else 0
+        c = caste_st.get(st, 0) if isinstance(caste_st.get(st), (int, float)) else 0
+        b = booth_st.get(st, 0) if isinstance(booth_st.get(st), (int, float)) else 0
+        if f + r + c + b == 0:
+            continue
+        state_table.append({'state': st, 'f20': f, 'retro': r, 'caste': c, 'booth': b})
+
+    # Sort by F20 desc, then retro
+    state_table.sort(key=lambda x: (-x['f20'], -x['retro']))
+
+    return jsonify({'series': series, 'state_table': state_table})
+
+
 @app.route('/api/admin/ac_pct')
 def admin_ac_pct():
     """Temporary admin endpoint: AC-wise % per state from form20_summary_view vs ac_election_mapping."""

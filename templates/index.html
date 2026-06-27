@@ -682,7 +682,102 @@
         <div id="glance-week-picker" class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar flex-1 py-0.5"></div>
       </div>
 
-      <!-- Analytics content -->
+      <!-- ── Dataset Overview KPIs ──────────────────────── -->
+      <div class="px-5 pt-5 grid grid-cols-4 gap-3 shrink-0">
+        <!-- Form20 -->
+        <div class="card p-4">
+          <div class="flex items-start justify-between mb-2">
+            <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Form 20</p>
+            <span class="material-symbols-outlined text-indigo-500" style="font-size:15px;">ballot</span>
+          </div>
+          <p class="text-[26px] font-black text-indigo-600 leading-none tabular-nums" id="gds-f20-pct">—</p>
+          <p class="text-[11px] text-gray-400 mt-1" id="gds-f20-sub">— / — ACs</p>
+          <div class="mt-2.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full bg-indigo-500 rounded-full transition-all duration-500" id="gds-f20-bar" style="width:0%"></div>
+          </div>
+        </div>
+        <!-- Retro -->
+        <div class="card p-4">
+          <div class="flex items-start justify-between mb-2">
+            <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Retro</p>
+            <span class="material-symbols-outlined text-violet-500" style="font-size:15px;">history</span>
+          </div>
+          <p class="text-[26px] font-black text-violet-600 leading-none tabular-nums" id="gds-retro-pct">—</p>
+          <p class="text-[11px] text-gray-400 mt-1" id="gds-retro-sub">— / — elections</p>
+          <div class="mt-2.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full bg-violet-500 rounded-full transition-all duration-500" id="gds-retro-bar" style="width:0%"></div>
+          </div>
+        </div>
+        <!-- Booth -->
+        <div class="card p-4">
+          <div class="flex items-start justify-between mb-2">
+            <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Booth</p>
+            <span class="material-symbols-outlined text-emerald-500" style="font-size:15px;">store</span>
+          </div>
+          <p class="text-[26px] font-black text-emerald-600 leading-none tabular-nums" id="gds-booth-pct">—</p>
+          <p class="text-[11px] text-gray-400 mt-1" id="gds-booth-sub">— / — ACs</p>
+          <div class="mt-2.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full bg-emerald-500 rounded-full transition-all duration-500" id="gds-booth-bar" style="width:0%"></div>
+          </div>
+        </div>
+        <!-- Caste -->
+        <div class="card p-4">
+          <div class="flex items-start justify-between mb-2">
+            <p class="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Caste</p>
+            <span class="material-symbols-outlined text-amber-500" style="font-size:15px;">groups</span>
+          </div>
+          <p class="text-[26px] font-black text-amber-600 leading-none tabular-nums" id="gds-caste-pct">—</p>
+          <p class="text-[11px] text-gray-400 mt-1" id="gds-caste-sub">— ACs covered</p>
+          <div class="mt-2.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full bg-amber-500 rounded-full transition-all duration-500" id="gds-caste-bar" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Pipeline Momentum (8 Week Trend) ─────────────── -->
+      <div class="px-5 pt-4 shrink-0">
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-1">
+            <p class="text-[12.5px] font-semibold text-gray-900">Pipeline Momentum (8 Week Trend)</p>
+            <div class="flex items-center gap-3 text-[10.5px] text-gray-500">
+              <span class="flex items-center gap-1.5"><span class="inline-block w-5 h-0.5 bg-gray-900 rounded"></span>Form 20</span>
+              <span class="flex items-center gap-1.5"><span class="inline-block w-5 h-0.5 bg-indigo-500 rounded"></span>Retro</span>
+              <span class="flex items-center gap-1.5"><span class="inline-block w-5 h-0.5 border-t-2 border-dashed border-indigo-400 rounded" style="display:inline-block;width:20px;border-bottom:none;"></span>Caste</span>
+              <span class="flex items-center gap-1.5"><span class="inline-block w-5 h-0.5 bg-gray-300 rounded"></span>Booth</span>
+            </div>
+          </div>
+          <p class="text-[10.5px] text-gray-400 mb-3">Form20 &amp; Retro — by election year, type &amp; state · Booth &amp; Caste — by state progress</p>
+          <div class="relative" style="height:200px"><canvas id="glanceMomentumChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- ── State-Wise Push Volume ────────────────────────── -->
+      <div class="px-5 pt-4 shrink-0">
+        <div class="card overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+            <p class="text-[12.5px] font-semibold text-gray-900">State-Wise Push Volume</p>
+            <span class="text-[10.5px] text-gray-400">ACs covered per dataset · darker = higher volume</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse min-w-[500px]">
+              <thead>
+                <tr class="bg-gray-50 border-b border-gray-100">
+                  <th class="px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider w-20">State</th>
+                  <th class="px-4 py-2.5 text-[10px] font-bold text-indigo-400 uppercase tracking-wider text-right">F20</th>
+                  <th class="px-4 py-2.5 text-[10px] font-bold text-violet-400 uppercase tracking-wider text-right">Retro</th>
+                  <th class="px-4 py-2.5 text-[10px] font-bold text-amber-400 uppercase tracking-wider text-right">Caste</th>
+                  <th class="px-4 py-2.5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider text-right">Booth</th>
+                </tr>
+              </thead>
+              <tbody id="glance-state-volume-body">
+                <tr><td colspan="5" class="px-5 py-8 text-center text-[12px] text-gray-400">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Weekly push activity ────────────────────────── -->
       <div class="p-5 flex flex-col gap-4 pb-10">
 
         <!-- Summary stat strip -->

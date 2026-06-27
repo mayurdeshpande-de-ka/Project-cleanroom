@@ -40,6 +40,9 @@ let _f20ByType      = {};  // form20 by_type from SQLite stats (completed/total 
 let gWeekChart  = null;
 let gStateChart = null;
 let gCasteChart = null;
+let gF20Chart   = null;
+let gRetroChart = null;
+let gBoothChart = null;
 
 const EL_TYPE_NAMES = { AE: 'Assembly', GE: 'General', BE: 'Bypoll', PE: 'Parliament', LE: 'Local', AC: 'Assembly' };
 const STATE_NAMES_MAP = {};  // populated lazily from filter dropdown
@@ -1627,7 +1630,11 @@ async function loadGlancePanel() {
     if (dateFilter) params.append('week', dateFilter);
     params.append('hide_bp', '1');
 
-    const glance = await apiFetch('/api/glance_report?' + params.toString());
+    const [glance, analytics, f20Stats] = await Promise.all([
+      apiFetch('/api/glance_report?' + params.toString()),
+      apiFetch('/api/dashboard/analytics').catch(() => null),
+      apiFetch('/api/form20_card_stats').catch(() => null),
+    ]);
 
     renderGlanceWeekPicker(glance.available_weeks || [], mondayOf(dateFilter));
 
@@ -1640,6 +1647,8 @@ async function loadGlancePanel() {
     if (countSpan) countSpan.textContent = weekRecords.length + ' records this week';
 
     renderGlanceAnalytics(glance, allWeeks, allRecords, weekRecords);
+    renderGlanceDatasetSection(analytics, f20Stats);
+    renderGlanceMomentumAndTable();
 
     if (!accordion) return;
 
@@ -1935,6 +1944,175 @@ function renderGlanceAnalytics(glance, allWeeks, allRecords, weekRecords) {
 
   // ── Election years: last week vs this week ──────────────────────────────
   renderYearComparison(allWeeks);
+}
+
+function renderGlanceDatasetSection(analytics, f20Stats) {
+  const a = analytics || {};
+  const f = f20Stats  || {};
+
+  // ── KPI cards ─────────────────────────────────────────────────────────────
+  const setKpi = (pctId, subId, barId, pct, sub) => {
+    const pEl = document.getElementById(pctId);
+    const sEl = document.getElementById(subId);
+    const bEl = document.getElementById(barId);
+    if (pEl) pEl.textContent = pct != null ? pct + '%' : '—';
+    if (sEl) sEl.textContent = sub;
+    if (bEl) bEl.style.width = (pct != null ? Math.min(pct, 100) : 0) + '%';
+  };
+
+  const retro = a.retro || {};
+  const booth  = a.booth  || {};
+  const caste  = a.caste  || {};
+
+  setKpi('gds-f20-pct', 'gds-f20-sub', 'gds-f20-bar',
+    f.coverage_pct != null ? f.coverage_pct : null,
+    f.form20_entries != null ? `${f.form20_entries.toLocaleString()} / ${(f.acpc_entries||0).toLocaleString()} ACs` : '—');
+
+  setKpi('gds-retro-pct', 'gds-retro-sub', 'gds-retro-bar',
+    retro.available && retro.ac_total ? Math.round((retro.ac_available / retro.ac_total) * 100) : null,
+    retro.available ? `${retro.ac_available} / ${retro.ac_total} elections` : 'Loading…');
+
+  setKpi('gds-booth-pct', 'gds-booth-sub', 'gds-booth-bar',
+    booth.available ? booth.coverage_pct_all : null,
+    booth.available ? `${(booth.acs_with_data||0).toLocaleString()} / ${(booth.total_acs_all||0).toLocaleString()} ACs` : 'Loading…');
+
+  setKpi('gds-caste-pct', 'gds-caste-sub', 'gds-caste-bar',
+    caste.available ? caste.coverage_pct_all : null,
+    caste.available ? `${(caste.acs_with_data||0).toLocaleString()} ACs · ${caste.categories||0} categories` : 'Loading…');
+}
+
+async function renderGlanceMomentumAndTable() {
+  let momentum;
+  try { momentum = await apiFetch('/api/weekly_momentum'); } catch { return; }
+  const series = momentum.series || [];
+
+  // ── Pipeline Momentum chart ────────────────────────────────────────────────
+  const mCtx = document.getElementById('glanceMomentumChart')?.getContext('2d');
+  if (mCtx && series.length) {
+    if (gF20Chart) { gF20Chart.destroy(); gF20Chart = null; }
+
+    const labels = series.map(s => {
+      const d = new Date(s.week + 'T00:00:00');
+      return (d.getMonth() + 1).toString().padStart(2,'0') + '-' + d.getDate().toString().padStart(2,'0');
+    });
+
+    // Normalise each series to 0-100 index (max = 100) for a common scale
+    const norm = (arr) => {
+      const max = Math.max(...arr.filter(v => v != null), 1);
+      return arr.map(v => v != null ? Math.round((v / max) * 100) : null);
+    };
+
+    const f20vals    = series.map(s => s.f20);
+    const retrovals  = series.map(s => s.retro_total);
+    const castevals  = series.map(s => s.caste_total);
+    const boothvals  = series.map(s => s.booth_total);
+
+    gF20Chart = new Chart(mCtx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Form 20',
+            data: norm(f20vals),
+            borderColor: '#111827', backgroundColor: 'transparent',
+            borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: 0.35,
+          },
+          {
+            label: 'Retro',
+            data: norm(retrovals),
+            borderColor: '#6366f1', backgroundColor: 'transparent',
+            borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: 0.35,
+          },
+          {
+            label: 'Caste',
+            data: norm(castevals),
+            borderColor: '#818cf8', backgroundColor: 'transparent',
+            borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: 0.35,
+          },
+          {
+            label: 'Booth',
+            data: norm(boothvals),
+            borderColor: '#d1d5db', backgroundColor: 'transparent',
+            borderWidth: 1.5, pointRadius: 0, tension: 0.35,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const raw = [f20vals, retrovals, castevals, boothvals][ctx.datasetIndex][ctx.dataIndex];
+                return ` ${ctx.dataset.label}: ${raw != null ? raw.toLocaleString() : '—'}`;
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true, max: 105,
+            ticks: { display: false }, grid: { color: '#f3f4f6' },
+          },
+          x: {
+            ticks: { font: { size: 10, family: 'Inter' }, color: '#9ca3af', maxRotation: 0 },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+  }
+
+  // ── State-Wise Push Volume table ───────────────────────────────────────────
+  const tbody = document.getElementById('glance-state-volume-body');
+  if (!tbody) return;
+  const table = momentum.state_table || [];
+  if (!table.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="px-5 py-6 text-center text-[12px] text-gray-400">No data</td></tr>';
+    return;
+  }
+
+  // Column-wise max for heat-map shading
+  const maxF20   = Math.max(...table.map(r => r.f20),   1);
+  const maxRetro = Math.max(...table.map(r => r.retro), 1);
+  const maxCaste = Math.max(...table.map(r => r.caste), 1);
+  const maxBooth = Math.max(...table.map(r => r.booth), 1);
+
+  const heatCell = (val, max, hue) => {
+    const pct = max > 0 ? val / max : 0;
+    const alpha = val > 0 ? Math.max(0.08, Math.round(pct * 10) / 10) : 0;
+    const bg = val > 0 ? `rgba(${hue},${alpha})` : 'transparent';
+    const bold = pct >= 0.6 ? 'font-bold' : 'font-medium';
+    return `<td class="px-4 py-2.5 text-right text-[12px] ${bold} text-gray-800 tabular-nums"
+              style="background:${bg}">${val > 0 ? val.toLocaleString() : '—'}</td>`;
+  };
+
+  const FULL_NAMES = {
+    AP:'Andhra Pradesh', AR:'Arunachal Pradesh', AS:'Assam', BR:'Bihar',
+    CG:'Chandigarh', CT:'Chhattisgarh', GA:'Goa', GJ:'Gujarat', HR:'Haryana',
+    HP:'Himachal Pradesh', JH:'Jharkhand', JK:'Jammu & Kashmir', KA:'Karnataka',
+    KL:'Kerala', LA:'Ladakh', LD:'Lakshadweep', MP:'Madhya Pradesh',
+    MH:'Maharashtra', MN:'Manipur', ML:'Meghalaya', MZ:'Mizoram', NL:'Nagaland',
+    OR:'Odisha', PB:'Punjab', PY:'Puducherry', RJ:'Rajasthan', SK:'Sikkim',
+    TN:'Tamil Nadu', TR:'Tripura', TS:'Telangana', UK:'Uttarakhand',
+    UP:'Uttar Pradesh', WB:'West Bengal', DL:'Delhi', AN:'Andaman & Nicobar',
+    CH:'Chandigarh',
+  };
+
+  tbody.innerHTML = table.map(r => `
+    <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+      <td class="px-5 py-2.5">
+        <span class="text-[12px] font-bold text-gray-900">${r.state}</span>
+        <p class="text-[9.5px] text-gray-400 leading-none mt-0.5">${FULL_NAMES[r.state] || ''}</p>
+      </td>
+      ${heatCell(r.f20,   maxF20,   '99,102,241')}
+      ${heatCell(r.retro, maxRetro, '139,92,246')}
+      ${heatCell(r.caste, maxCaste, '245,158,11')}
+      ${heatCell(r.booth, maxBooth, '16,185,129')}
+    </tr>`).join('');
 }
 
 // Compares the set of election years pushed last week vs this week.
