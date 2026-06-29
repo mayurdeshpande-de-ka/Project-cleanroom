@@ -649,7 +649,7 @@ function updateRetroCountLocal() {
   if (s && t && y && count > 0) {
     btn.disabled = false;
     btn.removeAttribute('aria-disabled');
-    btn.className = 'px-4 py-2 text-[12.5px] font-semibold rounded-lg transition-all flex items-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 cursor-pointer';
+    btn.className = 'px-4 py-2 text-[12.5px] font-semibold rounded-lg transition-all flex items-center gap-1.5 text-white cursor-pointer shadow-sm bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700';
   } else {
     btn.disabled = true;
     btn.setAttribute('aria-disabled', 'true');
@@ -817,6 +817,22 @@ function bindEvents() {
   });
 
   document.getElementById('retro-year').addEventListener('change', updateRetroCountLocal);
+
+  // Format segmented control (CSV / Excel) → writes to hidden #retro-format
+  document.querySelectorAll('.retro-fmt-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fmtInput = document.getElementById('retro-format');
+      if (fmtInput) fmtInput.value = btn.dataset.fmt;
+      document.querySelectorAll('.retro-fmt-btn').forEach(b => {
+        const active = b === btn;
+        b.classList.toggle('bg-white', active);
+        b.classList.toggle('text-gray-900', active);
+        b.classList.toggle('shadow-sm', active);
+        b.classList.toggle('text-gray-500', !active);
+        b.classList.toggle('hover:text-gray-700', !active);
+      });
+    });
+  });
 
   document.getElementById('retro-download').addEventListener('click', async () => {
     const state  = document.getElementById('retro-state').value;
@@ -1216,8 +1232,13 @@ function renderBoothPanel(d) {
   const subStatesEl = document.getElementById('booth-sub-states');
   const body        = document.getElementById('booth-body');
 
+  // Hero ribbon — booth data (populate regardless of panel layout)
+  const heroBooth    = document.getElementById('hero-booth');
+  const heroBoothSub = document.getElementById('hero-booth-sub');
+
   if (!d || !d.available) {
     if (pctEl) pctEl.textContent = '—';
+    if (heroBooth) heroBooth.textContent = '—';
     if (body)  body.innerHTML = _lockHTML(d?.error);
     return;
   }
@@ -1229,6 +1250,8 @@ function renderBoothPanel(d) {
 
   if (pctEl)       pctEl.textContent = coveragePctAll + '% AC coverage';
   if (subStatesEl) subStatesEl.textContent = fmtNum(d.states);
+  if (heroBooth)    heroBooth.textContent    = fmtNum(acsCovered);
+  if (heroBoothSub) heroBoothSub.textContent = `${coveragePctAll}% · ${fmtNum(d.states)} states`;
 
   if (!body) return;
 
@@ -1246,22 +1269,22 @@ function renderBoothPanel(d) {
           <div class="relative shrink-0 w-[64px] h-[64px]">
             <svg width="64" height="64" viewBox="0 0 64 64" class="-rotate-90">
               <circle cx="32" cy="32" r="26" fill="none" stroke="#e5e7eb" stroke-width="6"/>
-              <circle cx="32" cy="32" r="26" fill="none" stroke="#3b82f6" stroke-width="6"
+              <circle cx="32" cy="32" r="26" fill="none" stroke="#10b981" stroke-width="6"
                 stroke-dasharray="${circ}" stroke-dashoffset="${dash}" stroke-linecap="round"
                 style="transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)"/>
             </svg>
             <span class="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-gray-700">${coveragePctAll}%</span>
           </div>
           <div class="flex-1 min-w-0">
-            <p class="text-[20px] font-black tabular-nums leading-none text-blue-600">${coveragePctAll}%</p>
+            <p class="text-[20px] font-black tabular-nums leading-none text-emerald-600">${coveragePctAll}%</p>
             <p class="text-[10px] text-gray-400 font-medium mt-0.5">complete</p>
             <p class="text-[10.5px] text-gray-500 tabular-nums mt-0.5 font-medium">${fmtNum(acsCovered)} / ${fmtNum(totalAcsAll)} ACs</p>
           </div>
         </div>
         ${[
-          { v: fmtNum(totalAcsAll),      l: 'Total ACs',           c: 'text-gray-900', i: 'map' },
-          { v: fmtNum(acsCovered),       l: 'ACs with Booth Data', c: 'text-blue-600', i: 'how_to_vote' },
-          { v: fmtNum(d.total_booths),   l: 'Booths',              c: 'text-gray-900', i: 'location_on' },
+          { v: fmtNum(totalAcsAll),      l: 'Total ACs',           c: 'text-gray-900',   i: 'map' },
+          { v: fmtNum(acsCovered),       l: 'ACs with Booth Data', c: 'text-emerald-600', i: 'how_to_vote' },
+          { v: fmtNum(d.total_booths),   l: 'Booths',              c: 'text-gray-900',   i: 'location_on' },
         ].map(k => `
           <div class="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-3 flex items-center gap-3">
             <span class="material-symbols-outlined text-gray-300" style="font-size:18px;">${k.i}</span>
@@ -1278,9 +1301,9 @@ function renderBoothPanel(d) {
         <div class="grid grid-cols-5 gap-1.5">
           ${topStates.map(s => {
             const intensity = Math.round((s.acs / maxTopAc) * 9) + 1;
-            const bg = intensity >= 8 ? 'bg-blue-100 border-blue-200' :
-                       intensity >= 5 ? 'bg-blue-50 border-blue-100' : 'bg-gray-50 border-gray-100';
-            const tc = intensity >= 8 ? 'text-blue-700' : intensity >= 5 ? 'text-blue-600' : 'text-gray-600';
+            const bg = intensity >= 8 ? 'bg-emerald-100 border-emerald-200' :
+                       intensity >= 5 ? 'bg-emerald-50 border-emerald-100' : 'bg-gray-50 border-gray-100';
+            const tc = intensity >= 8 ? 'text-emerald-700' : intensity >= 5 ? 'text-emerald-600' : 'text-gray-600';
             return `
               <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.acs)} / ${fmtNum(s.total_acs)} ACs (${s.pct}%)">
                 <span class="text-[10.5px] font-bold ${tc}">${s.state} · ${s.pct}%</span>
@@ -1630,11 +1653,7 @@ async function loadGlancePanel() {
     if (dateFilter) params.append('week', dateFilter);
     params.append('hide_bp', '1');
 
-    const [glance, analytics, f20Stats] = await Promise.all([
-      apiFetch('/api/glance_report?' + params.toString()),
-      apiFetch('/api/dashboard/analytics').catch(() => null),
-      apiFetch('/api/form20_card_stats').catch(() => null),
-    ]);
+    const glance = await apiFetch('/api/glance_report?' + params.toString());
 
     renderGlanceWeekPicker(glance.available_weeks || [], mondayOf(dateFilter));
 
@@ -1647,7 +1666,6 @@ async function loadGlancePanel() {
     if (countSpan) countSpan.textContent = weekRecords.length + ' records this week';
 
     renderGlanceAnalytics(glance, allWeeks, allRecords, weekRecords);
-    renderGlanceDatasetSection(analytics, f20Stats);
     renderGlanceMomentumAndTable();
 
     if (!accordion) return;
@@ -1982,114 +2000,193 @@ function renderGlanceDatasetSection(analytics, f20Stats) {
 }
 
 async function renderGlanceMomentumAndTable() {
+  const wk = (document.getElementById('glance-date-filter') || {}).value || '';
   let momentum;
-  try { momentum = await apiFetch('/api/weekly_momentum'); } catch { return; }
-  const series = momentum.series || [];
+  try {
+    momentum = await apiFetch('/api/weekly_momentum' + (wk ? ('?week=' + encodeURIComponent(wk)) : ''));
+  } catch { return; }
 
-  // ── Pipeline Momentum chart ────────────────────────────────────────────────
-  const mCtx = document.getElementById('glanceMomentumChart')?.getContext('2d');
-  if (mCtx && series.length) {
-    if (gF20Chart) { gF20Chart.destroy(); gF20Chart = null; }
+  const series   = momentum.series || [];
+  const f20Week  = momentum.f20_week  || [];   // selected/current week's pushed Form 20 elections
+  const boothWk  = momentum.booth_week || [];  // zero for now
+  const casteWk  = momentum.caste_week || [];  // zero for now
 
-    const labels = series.map(s => {
-      const d = new Date(s.week + 'T00:00:00');
-      return (d.getMonth() + 1).toString().padStart(2,'0') + '-' + d.getDate().toString().padStart(2,'0');
-    });
+  // ── Top-strip Row 2 · per-dataset WEEKLY PUSHES ───────────────────────────
+  // Weekly Report tracks what was pushed, not DB totals. Only Form 20 has weekly
+  // pushes; Retro / Booth / Caste are zero. (DB totals live on the Main Dashboard.)
+  // Row 1 aggregate cards are populated by renderGlanceAnalytics (Form 20 driven).
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const f20This = f20Week.length;                                // selected week's Form 20 pushes
+  const f20Last4 = series.reduce((a, s) => a + (s.f20 || 0), 0); // last 4 weeks
+  setTxt('glance-stat-f20-week', f20This.toLocaleString('en-IN'));
+  setTxt('glance-stat-f20-sub',  `${f20Last4.toLocaleString('en-IN')} pushed in last 4 weeks`);
+  setTxt('glance-stat-retro-week', '0');
+  setTxt('glance-stat-retro-sub',  'pushed this week');
+  setTxt('glance-stat-booth-week', '0');
+  setTxt('glance-stat-booth-sub',  'pushed this week');
+  setTxt('glance-stat-caste-week', '0');
+  setTxt('glance-stat-caste-sub',  'pushed this week');
 
-    // Normalise each series to 0-100 index (max = 100) for a common scale
-    const norm = (arr) => {
-      const max = Math.max(...arr.filter(v => v != null), 1);
-      return arr.map(v => v != null ? Math.round((v / max) * 100) : null);
-    };
+  const labels = series.map(s => {
+    const d = new Date(s.week + 'T00:00:00');
+    return (d.getMonth()+1).toString().padStart(2,'0') + '-' + d.getDate().toString().padStart(2,'0');
+  });
 
-    const f20vals    = series.map(s => s.f20);
-    const retrovals  = series.map(s => s.retro_total);
-    const castevals  = series.map(s => s.caste_total);
-    const boothvals  = series.map(s => s.booth_total);
+  // Normalise a value array so peak = 100 (common Y-axis for mixed scales)
+  const norm = (arr) => {
+    const max = Math.max(...arr.filter(v => v != null && v > 0), 1);
+    return arr.map(v => v != null ? Math.round((v / max) * 100) : null);
+  };
 
-    gF20Chart = new Chart(mCtx, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Form 20',
-            data: norm(f20vals),
-            borderColor: '#111827', backgroundColor: 'transparent',
-            borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: 0.35,
+  // Only Form 20 carries real data; Retro / Booth / Caste stay flat at zero.
+  const f20vals   = series.map(s => s.f20);
+  const retrovals = series.map(() => 0);
+  const boothvals = series.map(() => 0);
+  const castevals = series.map(() => 0);
+
+  const chartOpts = (rawSets) => ({
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1f2937',
+        titleFont: { size: 11, family: 'Inter' },
+        bodyFont:  { size: 11, family: 'Inter' },
+        padding: 10,
+        callbacks: {
+          label: ctx => {
+            const raw = rawSets[ctx.datasetIndex][ctx.dataIndex];
+            const val = raw != null ? raw.toLocaleString() : '0';
+            return `  ${ctx.dataset.label}: ${val}`;
           },
-          {
-            label: 'Retro',
-            data: norm(retrovals),
-            borderColor: '#6366f1', backgroundColor: 'transparent',
-            borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: 0.35,
-          },
-          {
-            label: 'Caste',
-            data: norm(castevals),
-            borderColor: '#818cf8', backgroundColor: 'transparent',
-            borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: 0.35,
-          },
-          {
-            label: 'Booth',
-            data: norm(boothvals),
-            borderColor: '#d1d5db', backgroundColor: 'transparent',
-            borderWidth: 1.5, pointRadius: 0, tension: 0.35,
-          },
-        ],
+        },
       },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: ctx => {
-                const raw = [f20vals, retrovals, castevals, boothvals][ctx.datasetIndex][ctx.dataIndex];
-                return ` ${ctx.dataset.label}: ${raw != null ? raw.toLocaleString() : '—'}`;
-              },
+    },
+    scales: {
+      y: {
+        beginAtZero: true, max: 108,
+        ticks: { display: false },
+        grid: { color: '#f3f4f6' },
+      },
+      x: {
+        ticks: { font: { size: 10, family: 'Inter' }, color: '#9ca3af', maxRotation: 0 },
+        grid: { display: false },
+      },
+    },
+  });
+
+  // ── Chart.js v4-safe shared config ────────────────────────────────────────
+  const mkChart = (ctx, datasets, rawSets) => new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1f2937',
+          padding: 10,
+          callbacks: {
+            label: c => {
+              const raw = rawSets[c.datasetIndex]?.[c.dataIndex];
+              return `  ${c.dataset.label}: ${raw != null ? raw.toLocaleString() : '0'}`;
             },
           },
         },
-        scales: {
-          y: {
-            beginAtZero: true, max: 105,
-            ticks: { display: false }, grid: { color: '#f3f4f6' },
-          },
-          x: {
-            ticks: { font: { size: 10, family: 'Inter' }, color: '#9ca3af', maxRotation: 0 },
-            grid: { display: false },
-          },
-        },
       },
-    });
+      scales: {
+        y: { beginAtZero: true, max: 108, ticks: { display: false }, grid: { color: '#f3f4f6' } },
+        x: { ticks: { font: { size: 10 }, color: '#9ca3af', maxRotation: 0 }, grid: { display: false } },
+      },
+    },
+  });
+
+  // ── Category 1: Form 20 & Retro ───────────────────────────────────────────
+  const f20Ctx = document.getElementById('glanceMomentumF20Chart')?.getContext('2d');
+  if (f20Ctx) {
+    if (gF20Chart) { gF20Chart.destroy(); gF20Chart = null; }
+    try {
+      gF20Chart = mkChart(f20Ctx, [
+        {
+          label: 'Form 20',
+          data: norm(f20vals),
+          borderColor: '#111827',
+          backgroundColor: 'rgba(17,24,39,0.07)',
+          fill: true,
+          borderWidth: 2.5,
+          pointRadius: f20vals.map(v => v > 0 ? 5 : 3),
+          pointHoverRadius: 6,
+          pointBackgroundColor: f20vals.map(v => v > 0 ? '#111827' : '#d1d5db'),
+          tension: 0.3,
+        },
+        {
+          label: 'Retro',
+          data: norm(retrovals),
+          borderColor: '#6366f1',
+          backgroundColor: 'transparent',
+          fill: false,
+          borderWidth: 1.5,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          tension: 0.3,
+        },
+      ], [f20vals, retrovals]);
+
+      // Draw raw election count above each non-zero F20 point after animation
+      gF20Chart.options.animation = {
+        onComplete({ chart }) {
+          const meta = chart.getDatasetMeta(0);
+          const c2 = chart.ctx;
+          c2.save();
+          c2.font = 'bold 11px Inter,sans-serif';
+          c2.fillStyle = '#111827';
+          c2.textAlign = 'center';
+          meta.data.forEach((pt, i) => {
+            if (f20vals[i] > 0) c2.fillText(f20vals[i] + ' elections', pt.x, pt.y - 10);
+          });
+          c2.restore();
+        },
+      };
+      gF20Chart.update('none');
+    } catch (e) { console.error('F20 chart error:', e); }
   }
 
-  // ── State-Wise Push Volume table ───────────────────────────────────────────
-  const tbody = document.getElementById('glance-state-volume-body');
-  if (!tbody) return;
-  const table = momentum.state_table || [];
-  if (!table.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="px-5 py-6 text-center text-[12px] text-gray-400">No data</td></tr>';
-    return;
+  // ── Category 2: Booth & Caste ─────────────────────────────────────────────
+  const boothCtx = document.getElementById('glanceMomentumBoothChart')?.getContext('2d');
+  if (boothCtx) {
+    if (gBoothChart) { gBoothChart.destroy(); gBoothChart = null; }
+    try {
+      gBoothChart = mkChart(boothCtx, [
+        {
+          label: 'Booth',
+          data: norm(boothvals),
+          borderColor: '#10b981',
+          backgroundColor: 'transparent',
+          fill: false,
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.35,
+        },
+        {
+          label: 'Caste',
+          data: norm(castevals),
+          borderColor: '#f59e0b',
+          backgroundColor: 'transparent',
+          fill: false,
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          tension: 0.35,
+        },
+      ], [boothvals, castevals]);
+    } catch (e) { console.error('Booth chart error:', e); }
   }
 
-  // Column-wise max for heat-map shading
-  const maxF20   = Math.max(...table.map(r => r.f20),   1);
-  const maxRetro = Math.max(...table.map(r => r.retro), 1);
-  const maxCaste = Math.max(...table.map(r => r.caste), 1);
-  const maxBooth = Math.max(...table.map(r => r.booth), 1);
-
-  const heatCell = (val, max, hue) => {
-    const pct = max > 0 ? val / max : 0;
-    const alpha = val > 0 ? Math.max(0.08, Math.round(pct * 10) / 10) : 0;
-    const bg = val > 0 ? `rgba(${hue},${alpha})` : 'transparent';
-    const bold = pct >= 0.6 ? 'font-bold' : 'font-medium';
-    return `<td class="px-4 py-2.5 text-right text-[12px] ${bold} text-gray-800 tabular-nums"
-              style="background:${bg}">${val > 0 ? val.toLocaleString() : '—'}</td>`;
-  };
-
+  // ── Shared helpers ─────────────────────────────────────────────────────────
   const FULL_NAMES = {
     AP:'Andhra Pradesh', AR:'Arunachal Pradesh', AS:'Assam', BR:'Bihar',
     CG:'Chandigarh', CT:'Chhattisgarh', GA:'Goa', GJ:'Gujarat', HR:'Haryana',
@@ -2098,21 +2195,98 @@ async function renderGlanceMomentumAndTable() {
     MH:'Maharashtra', MN:'Manipur', ML:'Meghalaya', MZ:'Mizoram', NL:'Nagaland',
     OR:'Odisha', PB:'Punjab', PY:'Puducherry', RJ:'Rajasthan', SK:'Sikkim',
     TN:'Tamil Nadu', TR:'Tripura', TS:'Telangana', UK:'Uttarakhand',
-    UP:'Uttar Pradesh', WB:'West Bengal', DL:'Delhi', AN:'Andaman & Nicobar',
-    CH:'Chandigarh',
+    UP:'Uttar Pradesh', WB:'West Bengal', DL:'Delhi', AN:'Andaman & Nicobar', CH:'Chandigarh',
   };
 
-  tbody.innerHTML = table.map(r => `
-    <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-      <td class="px-5 py-2.5">
-        <span class="text-[12px] font-bold text-gray-900">${r.state}</span>
-        <p class="text-[9.5px] text-gray-400 leading-none mt-0.5">${FULL_NAMES[r.state] || ''}</p>
-      </td>
-      ${heatCell(r.f20,   maxF20,   '99,102,241')}
-      ${heatCell(r.retro, maxRetro, '139,92,246')}
-      ${heatCell(r.caste, maxCaste, '245,158,11')}
-      ${heatCell(r.booth, maxBooth, '16,185,129')}
-    </tr>`).join('');
+  const emptyRow = (cols, msg) =>
+    `<tr><td colspan="${cols}" class="px-3 py-8 text-center text-[11px] text-gray-400">
+       <span class="material-symbols-outlined block mb-1 text-gray-300" style="font-size:22px;">inbox</span>${msg}
+     </td></tr>`;
+
+  // ── Category 1: current/selected week's pushed Form 20 — grouped by State.
+  // Each state row carries its pushed elections as compact TYPE·YY chips, so
+  // the table stays short (one row per state) and never needs to scroll.
+  const body1 = document.getElementById('glance-vol-f20-body');
+  if (body1) {
+    if (!f20Week.length) {
+      body1.innerHTML = emptyRow(3, 'No Form 20 pushes this week');
+    } else {
+      // Aggregate by state
+      const byState = {};
+      f20Week.forEach(r => {
+        const st = r.state; if (!st) return;
+        if (!byState[st]) byState[st] = { ac: r.ac || 0, els: [] };
+        byState[st].els.push({ type: r.el_type || '—', year: String(r.el_year || '') });
+      });
+      const allRows = Object.entries(byState).sort((a, b) => b[1].ac - a[1].ac || b[1].els.length - a[1].els.length);
+      const maxAc = Math.max(...allRows.map(([, v]) => v.ac), 1);
+
+      // Cap rows so the table never scrolls and stays as tall as the chart.
+      const MAX_ROWS = 7, MAX_CHIPS = 3;
+      const rows = allRows.slice(0, MAX_ROWS);
+      const hiddenStates = allRows.length - rows.length;
+
+      const chip = (type, year) => {
+        const yy = year.length >= 2 ? year.slice(-2) : year;
+        return `<span class="inline-block text-[9px] font-bold leading-none px-1.5 py-1 rounded mr-1 whitespace-nowrap"
+                  style="background:rgba(99,102,241,0.10);color:#4f46e5;">${type}·${yy}</span>`;
+      };
+
+      body1.innerHTML = rows.map(([st, v]) => {
+        const alpha = Math.max(0.08, Math.round((v.ac / maxAc) * 10) / 10);
+        let chips = v.els.slice(0, MAX_CHIPS).map(e => chip(e.type, e.year)).join('');
+        if (v.els.length > MAX_CHIPS) {
+          chips += `<span class="inline-block text-[9px] font-bold leading-none px-1.5 py-1 rounded text-gray-500"
+                      style="background:#f3f4f6;">+${v.els.length - MAX_CHIPS}</span>`;
+        }
+        return `
+          <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+            <td class="px-3 py-2 whitespace-nowrap">
+              <span class="text-[11.5px] font-bold text-gray-900">${st}</span>
+              <span class="text-[9px] text-gray-400 ml-1">${FULL_NAMES[st] || ''}</span>
+            </td>
+            <td class="px-3 py-2 whitespace-nowrap">${chips}</td>
+            <td class="px-3 py-2 text-right text-[12.5px] font-bold text-gray-800 tabular-nums"
+                style="background:rgba(99,102,241,${alpha});">${v.ac.toLocaleString()}</td>
+          </tr>`;
+      }).join('');
+      if (hiddenStates > 0) {
+        body1.innerHTML += `
+          <tr><td colspan="3" class="px-3 py-1.5 text-center text-[10px] font-medium text-gray-400 bg-gray-50/50">
+            +${hiddenStates} more state${hiddenStates > 1 ? 's' : ''}
+          </td></tr>`;
+      }
+    }
+  }
+
+  // ── Category 2: this week's pushed Booth & Caste — State · ACs (zero for now)
+  const body2 = document.getElementById('glance-vol-booth-body');
+  if (body2) {
+    // Merge booth + caste by state into a single ACs figure
+    const byState = {};
+    [...boothWk, ...casteWk].forEach(r => {
+      const st = r.state; if (!st) return;
+      byState[st] = (byState[st] || 0) + (r.ac || 0);
+    });
+    const rows = Object.entries(byState).sort((a, b) => b[1] - a[1]);
+    if (!rows.length) {
+      body2.innerHTML = emptyRow(2, 'No Booth / Caste pushes this week');
+    } else {
+      const maxAc = Math.max(...rows.map(([, v]) => v), 1);
+      body2.innerHTML = rows.map(([st, ac]) => {
+        const alpha = Math.max(0.08, Math.round((ac / maxAc) * 10) / 10);
+        return `
+          <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+            <td class="px-3 py-2">
+              <span class="text-[11.5px] font-bold text-gray-900">${st}</span>
+              <p class="text-[9px] text-gray-400 leading-none mt-0.5">${FULL_NAMES[st] || ''}</p>
+            </td>
+            <td class="px-3 py-2 text-right text-[11.5px] font-bold text-gray-800 tabular-nums"
+                style="background:rgba(16,185,129,${alpha});">${ac.toLocaleString()}</td>
+          </tr>`;
+      }).join('');
+    }
+  }
 }
 
 // Compares the set of election years pushed last week vs this week.

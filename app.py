@@ -1977,32 +1977,42 @@ def weekly_momentum():
         except Exception:
             pass
 
-    # Build 8-week series (oldest → newest)
-    weeks = [(cur_mon - timedelta(days=7 * i)).isoformat() for i in range(7, -1, -1)]
+    # Build 4-week series (oldest → newest)
+    weeks = [(cur_mon - timedelta(days=7 * i)).isoformat() for i in range(3, -1, -1)]
 
     def _snap(wk):
-        return snapshots.get(wk, snapshots.get(wk + 'T00:00:00', {}))
+        s = snapshots.get(wk, snapshots.get(wk + 'T00:00:00', {}))
+        return s if isinstance(s, dict) else {}
+
+    # A snapshot metric may be either a per-state dict ({"TS": 9, ...}) or a
+    # pre-summed int total — handle both shapes so the endpoint never errors.
+    def _metric_total(val):
+        if isinstance(val, dict):
+            return sum(v for v in val.values() if isinstance(v, (int, float)))
+        if isinstance(val, (int, float)):
+            return val
+        return 0
+
+    def _metric_dict(val):
+        return val if isinstance(val, dict) else {}
 
     series = []
     for wk in weeks:
         s = _snap(wk)
-        retro_by_st = s.get('retro', {})
-        caste_by_st = s.get('caste', {})
-        booth_by_st = s.get('booth', {})
         series.append({
             'week':        wk,
             'f20':         f20_by_week.get(wk, 0),
-            'retro_total': sum(v for v in retro_by_st.values() if isinstance(v, (int, float))),
-            'caste_total': sum(v for v in caste_by_st.values() if isinstance(v, (int, float))),
-            'booth_total': sum(v for v in booth_by_st.values() if isinstance(v, (int, float))),
+            'retro_total': _metric_total(s.get('retro')),
+            'caste_total': _metric_total(s.get('caste')),
+            'booth_total': _metric_total(s.get('booth')),
         })
 
     # ── State table: latest available snapshot ────────────────────────────────
     latest_wk = max((k[:10] for k in snapshots), default=None) if snapshots else None
     latest_snap = _snap(latest_wk) if latest_wk else {}
-    retro_st = latest_snap.get('retro', {})
-    caste_st = latest_snap.get('caste', {})
-    booth_st = latest_snap.get('booth', {})
+    retro_st = _metric_dict(latest_snap.get('retro'))
+    caste_st = _metric_dict(latest_snap.get('caste'))
+    booth_st = _metric_dict(latest_snap.get('booth'))
 
     # Form20 per-state: ACs in Form20 source (from live JSON, approximated by STATE_AC_COUNTS)
     raw_live = _load_json_list(LIVE_EXTRACTED_JSON_PATH)
@@ -2028,7 +2038,75 @@ def weekly_momentum():
     # Sort by F20 desc, then retro
     state_table.sort(key=lambda x: (-x['f20'], -x['retro']))
 
-    return jsonify({'series': series, 'state_table': state_table})
+    # ── This-week pushed lists ────────────────────────────────────────────────
+    # Target week = ?week=YYYY-MM-DD (any day; snapped to its Monday) or current week.
+    req_week = (request.args.get('week') or '').strip()
+    if req_week:
+        try:
+            target_mon = _week_mon(req_week)
+        except Exception:
+            target_mon = cur_mon.isoformat()
+    else:
+        target_mon = cur_mon.isoformat()
+
+    # Form 20 (and Retro) — elections completed in the target week.
+    # Each completion_history key is "STATE-ELTYPE-YEAR"; AC number ≈ state AC count.
+    f20_week = []
+    for key, date_str in history.items():
+        try:
+            if _week_mon(date_str) != target_mon:
+                continue
+            parts = key.split('-')
+            if len(parts) < 3:
+                continue
+            st = parts[0]
+            el_year = parts[-1]
+            el_type = '-'.join(parts[1:-1])
+            f20_week.append({
+                'state':   st,
+                'el_type': el_type,
+                'el_year': el_year,
+                'ac':      STATE_AC_COUNTS.get(st, 0),
+            })
+        except Exception:
+            pass
+    # Newest/biggest first for readability
+    f20_week.sort(key=lambda x: (-x['ac'], x['state'], x['el_year']))
+
+    # All pushed Form 20 elections (every completed entry, all weeks) for the
+    # State-Wise Push Volume table — el_type · el_year · state · AC number.
+    f20_all = []
+    for key, date_str in history.items():
+        parts = key.split('-')
+        if len(parts) < 3:
+            continue
+        st = parts[0]
+        el_year = parts[-1]
+        el_type = '-'.join(parts[1:-1])
+        f20_all.append({
+            'state':   st,
+            'el_type': el_type,
+            'el_year': el_year,
+            'ac':      STATE_AC_COUNTS.get(st, 0),
+            'date':    date_str,
+        })
+    # Most recent push first, then larger states
+    f20_all.sort(key=lambda x: (x['date'], x['ac']), reverse=True)
+
+    # Booth & Caste — state + AC number for the target week (kept zero for now).
+    booth_week = []
+    caste_week = []
+
+    return jsonify({
+        'series':      series,
+        'state_table': state_table,
+        'target_week': target_mon,
+        'f20_week':    f20_week,
+        'f20_all':     f20_all,
+        'retro_week':  [],          # zero — Weekly Report tracks pushes, not DB totals
+        'booth_week':  booth_week,  # zero — Weekly Report tracks pushes, not DB totals
+        'caste_week':  caste_week,  # zero — Weekly Report tracks pushes, not DB totals
+    })
 
 
 @app.route('/api/admin/ac_pct')
