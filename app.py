@@ -619,7 +619,13 @@ def login():
 def auth_callback():
     token = google.authorize_access_token()
     user_info = token.get('userinfo')
-    # Optional: You can enforce allowed domains/emails here
+    
+    allowed_domain = os.environ.get('ALLOWED_OAUTH_DOMAIN', '').strip().lower()
+    if allowed_domain:
+        user_email = user_info.get('email', '').lower()
+        if not user_email.endswith('@' + allowed_domain):
+            return jsonify({"error": f"Unauthorized domain. Must be an @{allowed_domain} email."}), 403
+            
     session['user'] = user_info
     return redirect(url_for('index'))
 
