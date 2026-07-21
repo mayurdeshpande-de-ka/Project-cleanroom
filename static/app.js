@@ -452,10 +452,27 @@ async function saveModal() {
   };
   try {
     const updated = await apiFetch(`/api/records/${editingId}`, 'PATCH', body);
-    const idx = allRecords.findIndex(r => r.id === editingId);
-    if (idx >= 0) allRecords[idx] = updated;
-    closeModal(); renderTable(); loadStats();
-    showToast('Record updated successfully');
+    closeModal();
+
+    // If the user is viewing a specific status filter and the record's new status
+    // no longer matches that filter, the record will disappear from the list.
+    // Show a clear informational toast so the user knows the update was saved.
+    const statusLabels = {
+      missing: 'Not Downloaded', downloaded: 'Downloaded',
+      extracted: 'Extracted', db_pushed: 'DB Pushed'
+    };
+    const newLabel = statusLabels[updated.overall_status] || updated.overall_status;
+    const filterChanged = filters.status && filters.status !== 'remaining' && filters.status !== updated.overall_status;
+
+    // Reload from server to get a correctly filtered view
+    await loadRecords();
+    loadStats();
+
+    if (filterChanged) {
+      showToast(`Status set to "${newLabel}". Record moved out of current view.`);
+    } else {
+      showToast('Record updated successfully');
+    }
   } catch (e) { showToast('Save failed: ' + e.message, true); }
 }
 

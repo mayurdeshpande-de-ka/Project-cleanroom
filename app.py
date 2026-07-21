@@ -567,14 +567,15 @@ def apply_dynamic_status(r_dict, live_extracted, download_report, history=None):
     # would wrongly remove it from the backlog (e.g. TN AE 2026, set to DB Pushed
     # but absent from Form 20). Demote it to its real pipeline stage so it stays in
     # the backlog with an accurate badge and the per-stage counts stay consistent.
-    if not is_live_completed and r_dict.get('overall_status') in ('db_pushed', 'completed'):
+    # EXCEPTION: if the user has set a manual_override, trust their manual choice.
+    if not is_live_completed and r_dict.get('overall_status') in ('db_pushed', 'completed') and not r_dict.get('manual_override'):
         dl = download_report.get(key) or r_dict.get('download_status') or 'missing'
         r_dict['overall_status'] = 'downloaded' if dl == 'downloaded' else 'missing'
 
     current_status = r_dict.get('overall_status')
 
-    # 1. Apply download report status if present
-    if key in download_report:
+    # 1. Apply download report status if present, UNLESS user manually overrode the status
+    if key in download_report and not r_dict.get('manual_override'):
         csv_status = download_report[key]
         if current_status not in ('db_pushed', 'completed', 'extracted'):
             r_dict['overall_status'] = csv_status
@@ -724,6 +725,11 @@ def update_record(record_id):
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return jsonify({'error': 'No valid fields'}), 400
+
+    # If the user explicitly changes the status, flag it as a manual override
+    # so the automated CSV report doesn't instantly revert it (especially when downgrading to missing).
+    if 'overall_status' in updates:
+        updates['manual_override'] = 1
 
     updates['last_updated'] = datetime.now().strftime('%Y-%m-%d')
     set_clause = ', '.join(f'{k} = ?' for k in updates)
