@@ -1,5 +1,0 @@
-SELECT COUNT(*) FROM public.form20_summary_view ERROR canceling statement due to statement timeout
- 25.33875608444214
-SELECT COUNT(*) FROM public.ac_election_mapping -> [(32979,)] 0.0883488655090332
-SELECT COUNT(*) FROM public.form20_summary_view WHERE el_type NOT LIKE '%BP%' ERROR canceling statement due to statement timeout
- 25.28157377243042
