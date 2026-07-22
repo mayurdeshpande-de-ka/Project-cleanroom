@@ -65,45 +65,60 @@ EXCEL_PATH = os.path.join(BASE_DIR, 'Form20 Backlog Tracker.xlsx')
 
 # ── DB helpers ──────────────────────────────────────────────────────────────
 
-class TursoCursorWrapper:
-    def __init__(self, result_set):
-        self.result_set = result_set
+class LocalPostgresCursorWrapper:
+    def __init__(self, cursor):
+        self.cursor = cursor
     
     def fetchall(self):
-        cols = self.result_set.columns
-        return [dict(zip(cols, list(r))) for r in self.result_set.rows]
+        return [dict(r) for r in self.cursor.fetchall()] if self.cursor.description else []
         
     def fetchone(self):
-        if not self.result_set.rows: return None
-        cols = self.result_set.columns
-        return dict(zip(cols, list(self.result_set.rows[0])))
+        if not self.cursor.description: return None
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
+        
+    def __iter__(self):
+        return iter(self.fetchall())
 
-class TursoConnectionWrapper:
-    def __init__(self, client):
-        self.client = client
+class LocalPostgresConnectionWrapper:
+    def __init__(self, conn):
+        self.conn = conn
     
     def execute(self, query, params=()):
-        result_set = self.client.execute(query, list(params))
-        return TursoCursorWrapper(result_set)
+        # Replace SQLite '?' with PostgreSQL '%s'
+        pg_query = query.replace('?', '%s')
+        cur = self.conn.cursor()
+        cur.execute(pg_query, list(params) if params else ())
+        return LocalPostgresCursorWrapper(cur)
         
     def close(self):
-        self.client.close()
+        self.conn.close()
         
     def commit(self):
-        pass
+        self.conn.commit()
 
 def get_db():
     import os
-    turso_url = os.environ.get('TURSO_DATABASE_URL')
-    turso_token = os.environ.get('TURSO_AUTH_TOKEN')
+    import psycopg2
+    import psycopg2.extras
     
-    if turso_url and turso_token:
-        import libsql_client
-        # Ensure HTTPS for robust connection
-        turso_url = turso_url.replace('libsql://', 'https://')
-        client = libsql_client.create_client_sync(url=turso_url, auth_token=turso_token)
-        return TursoConnectionWrapper(client)
-    else:
+    db_host = os.environ.get('LOCAL_DB_HOST', 'localhost')
+    db_name = os.environ.get('LOCAL_DB_NAME', 'local_backlog_db')
+    db_user = os.environ.get('LOCAL_DB_USER', 'backlog_user')
+    db_pass = os.environ.get('LOCAL_DB_PASS', 'backlog_local_pass')
+    
+    try:
+        conn = psycopg2.connect(
+            host=db_host,
+            user=db_user,
+            password=db_pass,
+            database=db_name,
+            cursor_factory=psycopg2.extras.DictCursor
+        )
+        return LocalPostgresConnectionWrapper(conn)
+    except Exception as e:
+        print("Failed to connect to local Postgres:", e)
+        # Fallback to sqlite if needed
         import sqlite3
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
