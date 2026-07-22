@@ -56,7 +56,7 @@ jobs:
           conn.commit()
           conn.close()
           "
-      - name: Run Pytest QC
+      - name: Run Pytest QC (DB Migration)
         env:
           LOCAL_DB_HOST: localhost
           LOCAL_DB_NAME: local_backlog_db
@@ -65,8 +65,9 @@ jobs:
           GOOGLE_CLIENT_ID: dummy
           GOOGLE_CLIENT_SECRET: dummy
           SECRET_KEY: dummy
+          DISABLE_AUTH: "1"
         run: |
-          pytest test_db_migration.py -v
+          pytest test_db_migration.py tests/test_backend.py -v --tb=short
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -83,5 +84,7 @@ jobs:
           cache-dependency-path: './client/package-lock.json'
       - name: Install dependencies
         run: npm ci
+      - name: Run Frontend Unit Tests
+        run: npm test
       - name: Build frontend
         run: npm run build
