@@ -11,6 +11,20 @@ on:
 jobs:
   backend-lint-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: backlog_user
+          POSTGRES_PASSWORD: backlog_local_pass
+          POSTGRES_DB: local_backlog_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -20,11 +34,39 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt flake8
+          pip install -r requirements.txt flake8 pytest pytest-mock psycopg2-binary
       - name: Lint backend code
         run: |
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Initialize Test Database Schema
+        env:
+          LOCAL_DB_HOST: localhost
+          LOCAL_DB_NAME: local_backlog_db
+          LOCAL_DB_USER: backlog_user
+          LOCAL_DB_PASS: backlog_local_pass
+        run: |
+          python -c "
+          import psycopg2, os
+          conn = psycopg2.connect(host=os.environ['LOCAL_DB_HOST'], database=os.environ['LOCAL_DB_NAME'], user=os.environ['LOCAL_DB_USER'], password=os.environ['LOCAL_DB_PASS'])
+          conn.cursor().execute('''
+              CREATE TABLE download_tracking (id SERIAL PRIMARY KEY, assembly_constituency TEXT NOT NULL, state TEXT NOT NULL, type TEXT NOT NULL, record_key TEXT UNIQUE NOT NULL, is_sir_state INTEGER DEFAULT 0, download_status TEXT DEFAULT 'missing', extraction_status TEXT DEFAULT 'pending', db_status TEXT DEFAULT 'not_in_db', overall_status TEXT DEFAULT 'missing', wip INTEGER DEFAULT 0, assigned_to TEXT, remark TEXT, last_updated TEXT, retro_ready INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, manual_override INTEGER DEFAULT 0);
+              CREATE TABLE activity_log (id SERIAL PRIMARY KEY, record_key TEXT, action TEXT, old_value TEXT, new_value TEXT, changed_by TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+          ''')
+          conn.commit()
+          conn.close()
+          "
+      - name: Run Pytest QC
+        env:
+          LOCAL_DB_HOST: localhost
+          LOCAL_DB_NAME: local_backlog_db
+          LOCAL_DB_USER: backlog_user
+          LOCAL_DB_PASS: backlog_local_pass
+          GOOGLE_CLIENT_ID: dummy
+          GOOGLE_CLIENT_SECRET: dummy
+          SECRET_KEY: dummy
+        run: |
+          pytest test_db_migration.py -v
 
   frontend-build:
     runs-on: ubuntu-latest
