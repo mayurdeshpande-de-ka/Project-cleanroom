@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @layer base {
   :root {
@@ -38,9 +36,10 @@
 
 @layer base {
   * {
-    @apply border-gray-200;
+    border-color: rgb(229 231 235);
   }
   body {
-    @apply bg-gray-50 text-gray-900;
+    background-color: rgb(249 250 251);
+    color: rgb(17 24 39);
   }
 }
