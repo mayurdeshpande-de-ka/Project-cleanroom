@@ -394,6 +394,8 @@ window.goBackToStates = function () {
   currentView = 'states';
   currentDetailState = null;
   document.getElementById('detail-header').classList.add('hidden');
+  // Clear the URL hash so a refresh lands on the states view
+  history.pushState(null, '', window.location.pathname + window.location.search);
   renderTable();
 };
 
@@ -402,8 +404,42 @@ window.openStateDetail = function (stateName) {
   currentDetailState = stateName;
   document.getElementById('detail-header').classList.remove('hidden');
   document.getElementById('detail-state-name').textContent = stateName;
+  // Write the state name into the URL hash so a refresh restores this view
+  history.pushState(null, '', '#state=' + encodeURIComponent(stateName));
   renderTable();
 };
+
+// ── URL State Persistence ────────────────────────────────────────────────────
+// Read the URL hash on load or back/forward navigation and restore the view.
+function readStateFromURL() {
+  const hash = window.location.hash; // e.g. "#state=Uttar%20Pradesh"
+  if (hash && hash.startsWith('#state=')) {
+    const stateName = decodeURIComponent(hash.slice('#state='.length));
+    if (stateName) {
+      // Restore detail view — data may not be loaded yet, so we set variables
+      // and renderTable() will be called again once data arrives.
+      currentView = 'detail';
+      currentDetailState = stateName;
+      const detailHeader = document.getElementById('detail-header');
+      if (detailHeader) detailHeader.classList.remove('hidden');
+      const detailName = document.getElementById('detail-state-name');
+      if (detailName) detailName.textContent = stateName;
+      return;
+    }
+  }
+  // No hash or unrecognised hash — land on states view
+  currentView = 'states';
+  currentDetailState = null;
+}
+
+// Restore view from URL on initial page load
+document.addEventListener('DOMContentLoaded', readStateFromURL);
+
+// Restore view when the user hits the browser Back / Forward button
+window.addEventListener('popstate', function () {
+  readStateFromURL();
+  renderTable();
+});
 
 function x(str) {
   return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
