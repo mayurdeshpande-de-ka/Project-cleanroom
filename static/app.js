@@ -14,8 +14,22 @@ let toastTimer    = null;
 let searchTimer   = null;
 let retroMetadata = null;
 let filterMetadata = null;
+let stateMetadata = {};
 let currentView   = 'states';
 let currentDetailState = null;
+let listingMode   = 'backlog'; // 'backlog' | 'directory'
+let dirFilter     = 'all';     // 'all' | 'ready' | 'voters' | 'missing'
+let dirSortCol    = 'name';    // 'name' | 'acs' | 'booths' | 'voters' | 'admin'
+let dirSortDir    = 'asc';
+
+async function loadStateMetadata() {
+  try {
+    stateMetadata = await apiFetch('/api/backlog/state_metadata');
+    updateDirectoryKpiCards();
+  } catch (e) {
+    console.warn('loadStateMetadata error:', e);
+  }
+}
 
 const filters = {
   state: '', el_type: '', year: '', status: '', sir_only: false, search: '', wip: false, show_bp: false,
@@ -73,15 +87,17 @@ function reasonCategory(remark) {
 
 // Canonical AC counts per state (from ac_mapping; same across years/types)
 const STATE_AC_COUNTS = {
-  'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CG': 90,  'CT': 90,  'GA': 40,
+  'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CH': 1,   'CG': 1,   'CT': 90,  'GA': 40,
   'GJ': 182, 'HR': 90,  'HP': 68,  'JH': 81,  'KA': 224, 'KL': 140, 'MP': 230,
   'MH': 288, 'MN': 60,  'ML': 60,  'MZ': 40,  'NL': 60,  'OR': 147, 'PB': 117,
   'RJ': 200, 'SK': 32,  'TN': 234, 'TS': 119, 'TR': 60,  'UP': 403, 'UK': 70,
-  'WB': 294, 'DL': 70,  'PY': 30,  'JK': 90,  'LD': 1,   'AN': 1,   'CH': 1
+  'WB': 294, 'DL': 70,  'PY': 30,  'JK': 90,  'LD': 1,   'AN': 1,   'DD': 1,
+  'DN': 1,   'LA': 2
 };
 
 document.addEventListener('DOMContentLoaded', () => {
   loadFilters();
+  loadStateMetadata();
   // bindEvents() restores the last-viewed tab (default: Dashboard) and runs that
   // view's data load, so we don't eagerly load the dashboard here.
   bindEvents();
@@ -166,10 +182,15 @@ async function loadStats() {
   updateRecordBadge();
 }
 
-// Header badge: just how many elections the current filters show.
+// Header badge: just how many elections or states the current filters show.
 function updateRecordBadge() {
   const badge = document.getElementById('record-count-badge');
   if (!badge) return;
+  if (listingMode === 'directory') {
+    const stateList = Object.values(stateMetadata || {});
+    badge.textContent = `${stateList.length || 37} states & UTs`;
+    return;
+  }
   const count = allRecords.length;
   badge.textContent = count === 1 ? '1 election' : `${count.toLocaleString()} elections`;
 }
@@ -186,6 +207,9 @@ async function loadRecords() {
   if (!filters.show_bp) params.set('hide_bp',  '1');
 
   try {
+    if (!stateMetadata || Object.keys(stateMetadata).length === 0) {
+      await loadStateMetadata();
+    }
     allRecords = await apiFetch('/api/records?' + params);
     renderTable();
   } catch (e) {
@@ -195,6 +219,10 @@ async function loadRecords() {
 }
 
 function renderTable() {
+  if (listingMode === 'directory') {
+    renderBoothVoterDirectory();
+    return;
+  }
   const tbody = document.getElementById('table-body');
   const thead = document.getElementById('table-head');
   updateRecordBadge();
@@ -237,7 +265,7 @@ function renderTable() {
       <tr>
         <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none st-sortable" data-col="state">State${arrow('state')}</th>
         <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none st-sortable" data-col="count">Remaining${arrow('count')}</th>
-        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider w-[40%]">Pipeline</th>
+        <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider w-[45%]">Pipeline</th>
         <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Open</th>
       </tr>`;
 
@@ -400,10 +428,545 @@ function renderTable() {
   }
 }
 
+function updateStateMetaBanner(stateName) {
+  const banner = document.getElementById('detail-state-meta-banner');
+  const reportBtn = document.getElementById('detail-state-report-btn');
+  const metaReportLink = document.getElementById('meta-state-report-link');
+  if (!stateName) {
+    if (banner) banner.classList.add('hidden');
+    return;
+  }
+  const matchingRec = allRecords.find(r => (r.state_name || r.state) === stateName);
+  const stateCode = matchingRec ? matchingRec.state : null;
+  const meta = stateCode && stateMetadata ? stateMetadata[stateCode] : null;
+
+  if (stateCode) {
+    const reportUrl = `/state-glance-report?state_abb=${stateCode}`;
+    if (reportBtn) reportBtn.href = reportUrl;
+    if (metaReportLink) metaReportLink.href = reportUrl;
+  }
+
+  if (banner && meta) {
+    banner.classList.remove('hidden');
+    const tbEl = document.getElementById('meta-total-booths');
+    const abEl = document.getElementById('meta-avg-booths');
+    const aqEl = document.getElementById('meta-admin-quality');
+    const bBadge = document.getElementById('meta-booth-badge');
+    if (tbEl) tbEl.textContent = meta.has_booth ? meta.total_booths.toLocaleString() : '—';
+    if (abEl) abEl.textContent = meta.has_booth ? `Avg ${Math.round(meta.avg_booths_per_ac)} / AC` : 'Pending sync';
+    if (aqEl) aqEl.textContent = meta.has_booth ? `Admin: ${Math.round(meta.admin_quality)}%` : 'No data';
+    if (bBadge) {
+      bBadge.textContent = meta.has_booth ? 'Ready' : 'Pending';
+      bBadge.className = meta.has_booth 
+        ? 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100'
+        : 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 border border-gray-200';
+    }
+
+    const tvEl = document.getElementById('meta-total-voters');
+    const grEl = document.getElementById('meta-gender-ratio');
+    const dsEl = document.getElementById('meta-demographic-split');
+    const vBadge = document.getElementById('meta-voter-badge');
+    if (tvEl) tvEl.textContent = meta.has_voter ? `${(meta.total_voters / 1000000).toFixed(2)}M` : '—';
+    if (grEl) grEl.textContent = meta.has_voter ? `Ratio: ${meta.gender_ratio.toLocaleString()} F / 1k M` : 'Pending sync';
+    if (dsEl) dsEl.textContent = meta.has_voter ? `${meta.urban_pct}% Urban • ${meta.rural_pct}% Rural` : '—';
+    if (vBadge) {
+      vBadge.textContent = meta.has_voter ? 'Verified' : 'Pending';
+      vBadge.className = meta.has_voter 
+        ? 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100'
+        : 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 border border-gray-200';
+    }
+  } else if (banner) {
+    banner.classList.add('hidden');
+  }
+}
+
+function updateDirectoryKpiCards() {
+  const stateList = Object.values(stateMetadata || {});
+  if (!stateList.length) return;
+
+  let readyStates = 0;
+  let readyAcs = 0;
+  let missingStates = 0;
+  let missingAcs = 0;
+  let totalBooths = 0;
+  let totalVoters = 0;
+
+  stateList.forEach(s => {
+    const abb = (s.state_abb === 'CG') ? 'CH' : s.state_abb;
+    const acs = Number(s.total_acs) || STATE_AC_COUNTS[abb] || 1;
+    if (s.has_booth) {
+      readyStates++;
+      readyAcs += acs;
+      totalBooths += (s.total_booths || 0);
+      totalVoters += (s.total_voters || 0);
+    } else {
+      missingStates++;
+      missingAcs += acs;
+    }
+  });
+
+  const totalAcs = readyAcs + missingAcs;
+  const readyPct = totalAcs > 0 ? (readyAcs / totalAcs * 100).toFixed(1) : '0.0';
+  const missingPct = totalAcs > 0 ? (missingAcs / totalAcs * 100).toFixed(1) : '0.0';
+
+  const rcEl = document.getElementById('dir-ready-count');
+  const rpEl = document.getElementById('dir-ready-pct');
+  const vtEl = document.getElementById('dir-voters-total');
+  const mcEl = document.getElementById('dir-missing-count');
+  const mpEl = document.getElementById('dir-missing-pct');
+  const dpEl = document.getElementById('dir-progress-pct');
+  const dtEl = document.getElementById('dir-progress-text');
+  const dsegR = document.getElementById('dir-seg-ready');
+  const dsegM = document.getElementById('dir-seg-missing');
+
+  if (rcEl) rcEl.textContent = readyStates;
+  if (rpEl) rpEl.textContent = `(${readyPct}% ACs)`;
+  if (vtEl) vtEl.textContent = `${(totalVoters / 1000000).toFixed(1)}M`;
+  if (mcEl) mcEl.textContent = missingStates;
+  if (mpEl) mpEl.textContent = `(${missingAcs} ACs)`;
+  if (dpEl) dpEl.textContent = `${readyPct}%`;
+  if (dtEl) dtEl.textContent = `${readyAcs.toLocaleString()} / ${totalAcs.toLocaleString()} ACs mapped (${totalBooths.toLocaleString()} booths)`;
+  if (dsegR) dsegR.style.width = `${readyPct}%`;
+  if (dsegM) dsegM.style.width = `${missingPct}%`;
+}
+
+window.switchListingMode = function(mode) {
+  listingMode = mode;
+  const btnBacklog = document.getElementById('toggle-view-backlog');
+  const btnDir = document.getElementById('toggle-view-directory');
+  const conBacklog = document.getElementById('listing-backlog-container');
+  const conDir = document.getElementById('listing-directory-container');
+
+  if (mode === 'directory') {
+    if (btnBacklog) {
+      btnBacklog.className = 'px-2.5 py-1 text-[11.5px] font-bold rounded-md transition-all text-gray-500 hover:text-gray-900 flex items-center gap-1.5 select-none cursor-pointer';
+    }
+    if (btnDir) {
+      btnDir.className = 'px-2.5 py-1 text-[11.5px] font-bold rounded-md transition-all shadow-sm bg-white text-gray-900 flex items-center gap-1.5 select-none cursor-pointer';
+    }
+    if (conBacklog) conBacklog.classList.add('hidden');
+    if (conDir) conDir.classList.remove('hidden');
+    const detailHeader = document.getElementById('detail-header');
+    if (detailHeader) detailHeader.classList.add('hidden');
+    updateStateMetaBanner(null);
+    renderBoothVoterDirectory();
+  } else {
+    if (btnBacklog) {
+      btnBacklog.className = 'px-2.5 py-1 text-[11.5px] font-bold rounded-md transition-all shadow-sm bg-white text-gray-900 flex items-center gap-1.5 select-none cursor-pointer';
+    }
+    if (btnDir) {
+      btnDir.className = 'px-2.5 py-1 text-[11.5px] font-bold rounded-md transition-all text-gray-500 hover:text-gray-900 flex items-center gap-1.5 select-none cursor-pointer';
+    }
+    if (conBacklog) conBacklog.classList.remove('hidden');
+    if (conDir) conDir.classList.add('hidden');
+    renderTable();
+  }
+};
+
+window.filterDirectory = function(filterKey) {
+  dirFilter = filterKey;
+  ['all', 'pre_sir', 'sir', 'post_sir', 'missing', 'ready', 'voters'].forEach(k => {
+    const el = document.getElementById(`dir-card-${k}`);
+    if (!el) return;
+    if (k === filterKey) {
+      el.className = 'dir-kpi-card group flex items-center gap-3 p-3 rounded-lg border border-indigo-400 bg-indigo-50/60 shadow-sm transition-all cursor-pointer ring-1 ring-indigo-300';
+    } else {
+      el.className = 'dir-kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all bg-white cursor-pointer';
+    }
+  });
+  renderBoothVoterDirectory();
+};
+
+window._cachedStateBooths = {};
+
+window.toggleStateBoothDetail = async function(stateCode) {
+  const existingTr = document.getElementById(`dir-expand-${stateCode}`);
+  const icon = document.getElementById(`icon-expand-${stateCode}`);
+  if (existingTr) {
+    if (existingTr.classList.contains('hidden')) {
+      existingTr.classList.remove('hidden');
+      if (icon) icon.textContent = 'expand_less';
+    } else {
+      existingTr.classList.add('hidden');
+      if (icon) icon.textContent = 'expand_more';
+    }
+    return;
+  }
+
+  // Create loading row
+  const parentTr = document.getElementById(`dir-row-${stateCode}`);
+  if (!parentTr) return;
+  if (icon) icon.textContent = 'expand_less';
+
+  const expandTr = document.createElement('tr');
+  expandTr.id = `dir-expand-${stateCode}`;
+  expandTr.className = 'bg-slate-50/90 border-b border-gray-200';
+  expandTr.innerHTML = `
+    <td colspan="7" class="p-4 pl-12">
+      <div class="flex items-center gap-2 text-gray-500 py-3 text-[12px]">
+        <span class="material-symbols-outlined animate-spin text-indigo-600" style="font-size:16px;">refresh</span>
+        <span>Loading constituency booth data for ${stateCode}...</span>
+      </div>
+    </td>`;
+  parentTr.parentNode.insertBefore(expandTr, parentTr.nextSibling);
+
+  try {
+    let acs = window._cachedStateBooths[stateCode];
+    if (!acs) {
+      const resp = await fetch(`/api/backlog/state_booths/${stateCode}`);
+      acs = await resp.json();
+      window._cachedStateBooths[stateCode] = acs;
+    }
+
+    if (!acs || !acs.length) {
+      expandTr.innerHTML = `
+        <td colspan="7" class="p-4 pl-12 text-gray-400 text-[12px]">
+          No constituency-level breakdown available for ${stateCode}.
+        </td>`;
+      return;
+    }
+
+    let rowsHtml = '';
+    acs.forEach(ac => {
+      const pre = ac.pre_sir_booths || 0;
+      const sir = ac.sir_booths || 0;
+      const post = ac.post_sir_booths || 0;
+      const stage = ac.revision_stage || '—';
+      const stageBadge = stage === 'Post-SIR'
+        ? '<span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Post-SIR</span>'
+        : (stage === 'Pre-SIR'
+            ? '<span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">Pre-SIR</span>'
+            : '<span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">SIR</span>');
+
+      const statusBadge = ac.missing_data_status === 'Complete'
+        ? '<span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">Complete</span>'
+        : (ac.missing_data_status === 'Moderate Gaps'
+            ? '<span class="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">Moderate</span>'
+            : '<span class="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded">Critical Gaps</span>');
+
+      rowsHtml += `
+        <tr class="hover:bg-indigo-50/20 transition-colors border-b border-gray-100 text-[11.5px]">
+          <td class="py-2 px-3 font-bold text-gray-700">AC ${ac.ac_no}</td>
+          <td class="py-2 px-3 font-semibold text-gray-900">${x(ac.ac_name || '—')}</td>
+          <td class="py-2 px-3 text-right tabular-nums font-bold ${pre > 0 ? 'text-amber-700' : 'text-gray-300'}">${pre > 0 ? pre.toLocaleString() : '—'}</td>
+          <td class="py-2 px-3 text-right tabular-nums font-bold ${sir > 0 ? 'text-indigo-700' : 'text-gray-300'}">${sir > 0 ? sir.toLocaleString() : '—'}</td>
+          <td class="py-2 px-3 text-right tabular-nums font-bold ${post > 0 ? 'text-emerald-700' : 'text-gray-300'}">${post > 0 ? post.toLocaleString() : '—'}</td>
+          <td class="py-2 px-3 text-right tabular-nums font-extrabold text-gray-900">${(ac.extracted_booths || 0).toLocaleString()}</td>
+          <td class="py-2 px-3 text-center">${stageBadge}</td>
+          <td class="py-2 px-3 text-gray-500 max-w-[200px] truncate" title="${x(ac.type_of_revision || '')}">${x(ac.type_of_revision || '—')}</td>
+          <td class="py-2 px-3 text-center">${statusBadge}</td>
+        </tr>`;
+    });
+
+    expandTr.innerHTML = `
+      <td colspan="7" class="p-3 pl-8 sm:pl-12">
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div class="px-4 py-2.5 bg-gradient-to-r from-slate-50 to-indigo-50/30 border-b border-gray-200 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-indigo-600 text-[16px]">account_tree</span>
+              <span class="text-[12px] font-bold text-gray-900">${stateCode} Constituencies: Pre-SIR / SIR / Post-SIR Breakdown</span>
+              <span class="text-[10px] font-bold px-2 py-0.2 rounded-full bg-indigo-100 text-indigo-800">${acs.length} ACs</span>
+            </div>
+            <span class="text-[10.5px] text-gray-400 font-medium">Categorized by type_of_revision</span>
+          </div>
+          <div class="max-h-[320px] overflow-y-auto custom-scrollbar">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-gray-50/80 sticky top-0 text-[10px] uppercase font-bold text-gray-500 border-b border-gray-200 z-10">
+                <tr>
+                  <th class="py-2 px-3">AC #</th>
+                  <th class="py-2 px-3">Constituency</th>
+                  <th class="py-2 px-3 text-right text-amber-700">Pre-SIR</th>
+                  <th class="py-2 px-3 text-right text-indigo-700">SIR</th>
+                  <th class="py-2 px-3 text-right text-emerald-700">Post-SIR</th>
+                  <th class="py-2 px-3 text-right text-gray-800">Total Booths</th>
+                  <th class="py-2 px-3 text-center">Stage</th>
+                  <th class="py-2 px-3">Revision String (type_of_revision)</th>
+                  <th class="py-2 px-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </td>`;
+  } catch (err) {
+    expandTr.innerHTML = `
+      <td colspan="7" class="p-4 pl-12 text-rose-500 text-[12px]">
+        Failed to load constituency data: ${err.message}
+      </td>`;
+  }
+};
+
+function renderBoothVoterDirectory() {
+  const tbody = document.getElementById('table-body');
+  const thead = document.getElementById('table-head');
+  const badge = document.getElementById('record-count-badge');
+  const paginationText = document.getElementById('pagination-text');
+
+  let stateList = Object.values(stateMetadata || {});
+  if (!stateList.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="px-5 py-12 text-center text-gray-400">Loading Booth &amp; Voter Directory...</td></tr>`;
+    return;
+  }
+
+  const backlogByState = {};
+  allRecords.forEach(r => {
+    const s = r.state;
+    backlogByState[s] = (backlogByState[s] || 0) + 1;
+  });
+
+  if (dirFilter === 'pre_sir') {
+    stateList = stateList.filter(s => (s.pre_sir_booths || 0) > 0);
+  } else if (dirFilter === 'sir') {
+    stateList = stateList.filter(s => (s.sir_booths || 0) > 0);
+  } else if (dirFilter === 'post_sir') {
+    stateList = stateList.filter(s => (s.post_sir_booths || 0) > 0);
+  } else if (dirFilter === 'ready') {
+    stateList = stateList.filter(s => s.has_booth);
+  } else if (dirFilter === 'voters') {
+    stateList = stateList.filter(s => s.has_voter);
+  } else if (dirFilter === 'missing') {
+    stateList = stateList.filter(s => !s.has_booth);
+  }
+
+  if (filters.state) {
+    stateList = stateList.filter(s => s.state_abb === filters.state);
+  }
+
+  const searchQ = (filters.search || '').trim().toLowerCase();
+  if (searchQ) {
+    stateList = stateList.filter(s => 
+      s.state_name.toLowerCase().includes(searchQ) || 
+      s.state_abb.toLowerCase().includes(searchQ)
+    );
+  }
+
+  stateList.sort((a, b) => {
+    let va, vb;
+    if (dirSortCol === 'name') {
+      va = a.state_name; vb = b.state_name;
+      return dirSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    } else if (dirSortCol === 'acs') {
+      va = a.total_acs || 0; vb = b.total_acs || 0;
+    } else if (dirSortCol === 'pre_sir') {
+      va = a.pre_sir_booths || 0; vb = b.pre_sir_booths || 0;
+    } else if (dirSortCol === 'sir') {
+      va = a.sir_booths || 0; vb = b.sir_booths || 0;
+    } else if (dirSortCol === 'post_sir') {
+      va = a.post_sir_booths || 0; vb = b.post_sir_booths || 0;
+    } else if (dirSortCol === 'booths') {
+      va = a.total_booths || 0; vb = b.total_booths || 0;
+    } else if (dirSortCol === 'voters') {
+      va = a.total_voters || 0; vb = b.total_voters || 0;
+    } else if (dirSortCol === 'admin') {
+      va = a.admin_quality || 0; vb = b.admin_quality || 0;
+    } else {
+      va = a.state_name; vb = b.state_name;
+      return dirSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    }
+    return dirSortDir === 'asc' ? va - vb : vb - va;
+  });
+
+  if (badge) badge.textContent = `${stateList.length} States & UTs`;
+  if (paginationText) {
+    paginationText.textContent = `Displaying ${stateList.length} of ${Object.keys(stateMetadata).length} states in Directory`;
+  }
+
+  const arrow = col => dirSortCol === col ? (dirSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+
+  thead.innerHTML = `
+    <tr>
+      <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none dir-sortable" data-col="name">State &amp; Canonical ACs${arrow('name')}</th>
+      <th class="px-4 py-3 text-[10.5px] font-bold text-amber-700 uppercase tracking-wider cursor-pointer hover:bg-amber-50/50 select-none dir-sortable text-right" data-col="pre_sir">Pre-SIR Booths${arrow('pre_sir')}</th>
+      <th class="px-4 py-3 text-[10.5px] font-bold text-indigo-700 uppercase tracking-wider cursor-pointer hover:bg-indigo-50/50 select-none dir-sortable text-right" data-col="sir">SIR Booths${arrow('sir')}</th>
+      <th class="px-4 py-3 text-[10.5px] font-bold text-emerald-700 uppercase tracking-wider cursor-pointer hover:bg-emerald-50/50 select-none dir-sortable text-right" data-col="post_sir">Post-SIR Booths${arrow('post_sir')}</th>
+      <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none dir-sortable" data-col="admin">Admin Quality${arrow('admin')}</th>
+      <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none dir-sortable" data-col="voters">Electoral Roll${arrow('voters')}</th>
+      <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider text-right">Actions</th>
+    </tr>`;
+
+  if (!stateList.length) {
+    tbody.innerHTML = `
+      <tr><td colspan="7" class="px-5 py-12 text-center">
+        <div class="flex flex-col items-center gap-2 text-gray-400">
+          <span class="material-symbols-outlined" style="font-size:28px;">search_off</span>
+          <p class="text-[12px]">No states match the selected filters.</p>
+        </div>
+      </td></tr>`;
+    return;
+  }
+
+  let html = '';
+  stateList.forEach(s => {
+    const rawCode = s.state_abb || '';
+    const stateCode = (rawCode === 'CG') ? 'CH' : rawCode;
+    const stateName = (s.state_name === 'CG' || stateCode === 'CH') ? 'Chandigarh' : s.state_name;
+    const canonicalAcs = Number(s.total_acs) || STATE_AC_COUNTS[stateCode] || 1;
+    
+    const preCount = s.pre_sir_booths || 0;
+    const sirCount = s.sir_booths || 0;
+    const postCount = s.post_sir_booths || 0;
+    const revStage = s.revision_stage || '—';
+
+    // Pre-SIR cell
+    let preHtml = '';
+    if (preCount > 0) {
+      preHtml = `
+        <div class="flex flex-col items-end">
+          <span class="text-[13px] font-bold text-amber-900 tabular-nums">${preCount.toLocaleString()}</span>
+          <span class="inline-flex items-center gap-1 text-[9.5px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded mt-0.5">
+            Draft
+          </span>
+        </div>`;
+    } else if (s.has_booth) {
+      preHtml = `<span class="text-[12px] text-gray-300 font-medium">—</span>`;
+    } else {
+      preHtml = `<span class="text-[11px] text-gray-300 font-medium">○</span>`;
+    }
+
+    // SIR cell
+    let sirHtml = '';
+    if (sirCount > 0) {
+      sirHtml = `
+        <div class="flex flex-col items-end">
+          <span class="text-[13px] font-bold text-indigo-900 tabular-nums">${sirCount.toLocaleString()}</span>
+          <span class="inline-flex items-center gap-1 text-[9.5px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded mt-0.5">
+            Intensive / SSR
+          </span>
+        </div>`;
+    } else if (s.has_booth) {
+      sirHtml = `<span class="text-[12px] text-gray-300 font-medium">—</span>`;
+    } else {
+      sirHtml = `<span class="text-[11px] text-gray-300 font-medium">○</span>`;
+    }
+
+    // Post-SIR cell
+    let postHtml = '';
+    if (postCount > 0) {
+      postHtml = `
+        <div class="flex flex-col items-end">
+          <span class="text-[13px] font-bold text-emerald-900 tabular-nums">${postCount.toLocaleString()}</span>
+          <span class="inline-flex items-center gap-1 text-[9.5px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded mt-0.5">
+            Final Roll
+          </span>
+        </div>`;
+    } else if (s.has_booth) {
+      postHtml = `<span class="text-[12px] text-gray-300 font-medium">—</span>`;
+    } else {
+      postHtml = `<span class="text-[11px] text-gray-300 font-medium">○</span>`;
+    }
+
+    // Stage badge for state column
+    let stageBadge = '';
+    if (s.has_booth) {
+      if (revStage === 'Post-SIR') {
+        stageBadge = '<span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Post-SIR</span>';
+      } else if (revStage === 'Pre-SIR') {
+        stageBadge = '<span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">Pre-SIR</span>';
+      } else {
+        stageBadge = '<span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">SIR</span>';
+      }
+    }
+
+    // Admin Quality HTML
+    let adminHtml = '';
+    if (s.has_booth) {
+      const q = Math.round(s.admin_quality);
+      const colorCls = q >= 80 ? 'emerald' : (q >= 50 ? 'amber' : 'red');
+      adminHtml = `
+        <div class="flex flex-col">
+          <div class="flex items-center gap-1.5">
+            <span class="inline-flex items-center gap-1 text-[11px] font-bold text-${colorCls}-700 bg-${colorCls}-50 border border-${colorCls}-200 px-2 py-0.5 rounded-full">
+              <span class="w-1.5 h-1.5 rounded-full bg-${colorCls}-500"></span>
+              ${q}% Complete
+            </span>
+          </div>
+          <span class="text-[9.5px] text-gray-400 font-medium mt-1">Blk: ${s.field_completeness?.block_taluka_pct || 0}% • PS: ${s.field_completeness?.police_station_pct || 0}%</span>
+        </div>`;
+    } else {
+      adminHtml = `<span class="text-[11px] text-gray-300">—</span>`;
+    }
+
+    // Voter HTML
+    let voterHtml = '';
+    if (s.has_voter) {
+      voterHtml = `
+        <div class="flex flex-col">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[13px] font-bold text-purple-950 tabular-nums">${(s.total_voters / 1000000).toFixed(2)}M</span>
+            <span class="text-[11px] text-gray-400 font-medium">electors</span>
+          </div>
+          <div class="flex items-center gap-2 text-[10.5px] text-gray-500 font-medium mt-0.5">
+            <span class="text-purple-700 font-semibold">${s.gender_ratio.toLocaleString()} F / 1k M</span>
+            <span>•</span>
+            <span>${s.urban_pct}% Urban</span>
+          </div>
+        </div>`;
+    } else {
+      voterHtml = `<span class="text-[11px] text-gray-400 font-medium">Roll Not Ingested</span>`;
+    }
+
+    html += `
+      <tr id="dir-row-${stateCode}" class="trow bg-white border-b border-gray-50 hover:bg-slate-50/60 transition-colors">
+        <td class="px-5 py-3.5">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg ${s.has_booth ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-gray-100 text-gray-400'} flex items-center justify-center shrink-0 font-extrabold text-[11px]">
+              ${stateCode}
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5">
+                <p class="text-[13px] font-semibold text-gray-900 leading-tight">${x(stateName)}</p>
+                ${stageBadge}
+              </div>
+              <p class="text-[11px] text-gray-400 font-medium mt-0.5">${canonicalAcs} Canonical ACs • ${s.has_booth ? (s.total_booths || 0).toLocaleString() + ' booths' : '0 booths'}</p>
+            </div>
+          </div>
+        </td>
+        <td class="px-4 py-3.5 whitespace-nowrap text-right">${preHtml}</td>
+        <td class="px-4 py-3.5 whitespace-nowrap text-right">${sirHtml}</td>
+        <td class="px-4 py-3.5 whitespace-nowrap text-right">${postHtml}</td>
+        <td class="px-5 py-3.5 whitespace-nowrap">${adminHtml}</td>
+        <td class="px-5 py-3.5 whitespace-nowrap">${voterHtml}</td>
+        <td class="px-5 py-3.5 text-right whitespace-nowrap">
+          <div class="flex items-center justify-end gap-1.5">
+            ${s.has_booth ? `
+              <button onclick="window.toggleStateBoothDetail('${stateCode}')"
+                      id="btn-expand-${stateCode}"
+                      class="px-2 py-1 text-[11px] font-bold text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg transition-all inline-flex items-center gap-0.5 cursor-pointer"
+                      title="View Assembly Constituencies Breakdown">
+                <span class="material-symbols-outlined text-[14px]" id="icon-expand-${stateCode}">expand_more</span>
+                <span>ACs</span>
+              </button>
+            ` : ''}
+            <a href="/state-glance-report?state_abb=${stateCode}" target="_blank"
+               class="px-2.5 py-1 text-[11.5px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50/60 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all inline-flex items-center gap-1">
+              <span>Report</span>
+              <span class="material-symbols-outlined" style="font-size:12px;">open_in_new</span>
+            </a>
+          </div>
+        </td>
+      </tr>`;
+  });
+
+  tbody.innerHTML = html;
+
+  thead.querySelectorAll('.dir-sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const c = th.dataset.col;
+      dirSortDir = dirSortCol === c && dirSortDir === 'asc' ? 'desc' : 'asc';
+      dirSortCol = c;
+      renderBoothVoterDirectory();
+    });
+  });
+}
+
 window.goBackToStates = function () {
   currentView = 'states';
   currentDetailState = null;
   document.getElementById('detail-header').classList.add('hidden');
+  updateStateMetaBanner(null);
   // Clear the URL hash so a refresh lands on the states view
   history.pushState(null, '', window.location.pathname + window.location.search);
   renderTable();
@@ -414,6 +977,7 @@ window.openStateDetail = function (stateName) {
   currentDetailState = stateName;
   document.getElementById('detail-header').classList.remove('hidden');
   document.getElementById('detail-state-name').textContent = stateName;
+  updateStateMetaBanner(stateName);
   // Write the state name into the URL hash so a refresh restores this view
   history.pushState(null, '', '#state=' + encodeURIComponent(stateName));
   renderTable();
@@ -434,6 +998,7 @@ function readStateFromURL() {
       if (detailHeader) detailHeader.classList.remove('hidden');
       const detailName = document.getElementById('detail-state-name');
       if (detailName) detailName.textContent = stateName;
+      updateStateMetaBanner(stateName);
       return;
     }
   }
@@ -809,6 +1374,11 @@ function bindEvents() {
       if (t.id === activeId) {
         view.classList.remove('hidden'); view.classList.add('flex');
         nav.classList.add('active');
+        if (window.innerWidth < 768) {
+          setTimeout(() => {
+            nav.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+          }, 50);
+        }
         if (t.setup) t.setup();
       } else {
         view.classList.add('hidden'); view.classList.remove('flex');
@@ -816,9 +1386,6 @@ function bindEvents() {
       }
     });
 
-
-    // Remember the active tab so a browser reload restores the same page.
-    try { localStorage.setItem('activeTab', activeId); } catch (e) {}
   }
 
   navTabs.forEach(t => {
@@ -957,11 +1524,6 @@ function bindEvents() {
     startTab = 'nav-glance';
   } else if (hash === '#listing' || hash.startsWith('#state-')) {
     startTab = 'nav-listing';
-  } else {
-    try {
-      const saved = localStorage.getItem('activeTab');
-      if (saved && PERSIST_TABS.has(saved)) startTab = saved;
-    } catch (e) {}
   }
   switchTab(startTab);
 }
@@ -1025,7 +1587,7 @@ function renderForm20Panel(stats) {
   _f20ByType     = stats.by_type     || {};
 
   setEl('f20-pct',        pct + '%');
-  setEl('f20-pct-badge',  pct + '% complete');
+  setEl('f20-pct-badge', pct + '%');
   setEl('f20-counts',     `${completed.toLocaleString()} / ${total.toLocaleString()} elections in DB`);
   const progEl = document.getElementById('f20-prog');
   if (progEl) progEl.style.width = pct + '%';
@@ -1063,30 +1625,7 @@ function renderForm20Panel(stats) {
     }).join('');
   }
 
-  // Bottom completed states (Remaining)
-  const stateWrap = document.getElementById('f20-state-rows');
-  if (stateWrap && stats.by_state) {
-    const topStates = [...stats.by_state]
-      .sort((a, b) => (b.total - b.completed) - (a.total - a.completed))
-      .slice(0, 8);
-    const max = Math.max(...topStates.map(s => s.completed), 1); // Highest among the bottom for color scaling
-    stateWrap.className = 'grid grid-cols-4 gap-1.5';
-    stateWrap.innerHTML = topStates.map(s => {
-      // Reverse intensity so 0 is red, but wait, the prompt wants to highlight them?
-      // Just keep them subtle or use red/orange for low?
-      // Let's use red for 0, orange for low.
-      const intensity = Math.round((s.completed / max) * 9) + 1;
-      const bg = intensity <= 2 ? 'bg-red-50 border-red-100' :
-                 intensity <= 5 ? 'bg-orange-50 border-orange-100' : 'bg-gray-50 border-gray-100';
-      const tc = intensity <= 2 ? 'text-red-600' : intensity <= 5 ? 'text-orange-600' : 'text-gray-600';
-      return `
-        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5">
-          <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
-          <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${s.completed}</span>
-          <span class="text-[9px] text-gray-400 leading-none">elections</span>
-        </div>`;
-    }).join('');
-  }
+  // (Bottom completed states for Form 20 are now exclusively handled by populateForm20Card)
 }
 
 
@@ -1111,6 +1650,8 @@ function renderRetroPanel(r) {
   const ringPct = document.getElementById('retro-ring-pct');
   if (ring)    ring.style.strokeDashoffset = dash;
   if (ringPct) ringPct.textContent = pct + '%';
+  const retroBadge = document.getElementById('retro-pct-badge');
+  if (retroBadge) retroBadge.textContent = pct + '%';
 
   // Main numbers
   const setPct = document.getElementById('retro-pct');
@@ -1168,8 +1709,9 @@ function renderRetroPanel(r) {
                  p <= 50 ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100';
       const tc = p <= 20 ? 'text-rose-600' : p <= 50 ? 'text-amber-600' : 'text-gray-600';
       return `
-        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${s.pct}%">
-          <span class="text-[11px] font-bold ${tc}">${s.state} - ${s.pct}%</span>
+        <div class="flex flex-col items-center justify-center py-1.5 px-0.5 rounded-lg border ${bg} gap-0.5 text-center leading-tight" title="${s.state}: ${s.pct}%">
+          <span class="text-[10px] font-bold ${tc}">${s.state}</span>
+          <span class="text-[9px] font-bold ${tc}">${Math.round(p)}%</span>
         </div>`;
     }).join('');
   }
@@ -1228,7 +1770,7 @@ function renderCastePanel(d) {
   const realCatN   = (d.by_category || []).length;
 
   const coveragePctAll = d.coverage_pct_all || 0;
-  if (pctEl) pctEl.textContent = coveragePctAll + '% AC coverage';
+  if (pctEl) pctEl.textContent = coveragePctAll + '%';
   if (subStatesEl) subStatesEl.textContent = fmtNum(d.states);
   if (heroCaste)    heroCaste.textContent    = fmtNum(acsCovered);
   if (heroCasteSub) heroCasteSub.textContent = `${fmtNum(d.states)} States/UTs`;
@@ -1289,10 +1831,10 @@ function renderCastePanel(d) {
                  p <= 50 ? 'bg-orange-50 border-orange-100' : 'bg-gray-50 border-gray-100';
       const tc = p <= 20 ? 'text-red-600' : p <= 50 ? 'text-orange-600' : 'text-gray-600';
       return `
-        <div class="flex flex-col items-center justify-center border py-1.5 rounded-lg gap-0.5 ${bg}" title="${s.state}: ${fmtNum(s.acs)} / ${fmtNum(s.total_acs)} ACs (${s.pct}%)">
-          <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
-          <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.acs)}</span>
-          <span class="text-[9px] text-gray-400 tabular-nums leading-none">${s.pct}%</span>
+        <div class="flex flex-col items-center justify-center border py-1.5 px-0.5 rounded-lg gap-0.5 ${bg} text-center leading-tight" title="${s.state}: ${fmtNum(s.acs)} / ${fmtNum(s.total_acs)} ACs (${s.pct}%)">
+          <span class="text-[10px] font-bold ${tc}">${s.state}</span>
+          <span class="text-[11px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.acs)}</span>
+          <span class="text-[9px] text-gray-400 tabular-nums leading-none">${Math.round(p)}%</span>
         </div>
       `;
     }).join('');
@@ -1323,7 +1865,7 @@ function renderBoothPanel(d) {
   const totalAcsAll     = d.total_acs_all || 0;
   const stateProgress   = d.state_progress || [];
 
-  if (pctEl)       pctEl.textContent = coveragePctAll + '% AC coverage';
+  if (pctEl)       pctEl.textContent = coveragePctAll + '%';
   if (subStatesEl) subStatesEl.textContent = fmtNum(d.states);
   if (heroBooth)    heroBooth.textContent    = fmtNum(acsCovered);
   if (heroBoothSub) heroBoothSub.textContent = `${coveragePctAll}% · ${fmtNum(d.states)} States/UTs`;
@@ -1355,10 +1897,10 @@ function renderBoothPanel(d) {
                  p <= 50 ? 'bg-orange-50 border-orange-100' : 'bg-gray-50 border-gray-100';
       const tc = p <= 20 ? 'text-red-600' : p <= 50 ? 'text-orange-600' : 'text-gray-600';
       return `
-        <div class="flex flex-col items-center justify-center border py-1.5 rounded-lg gap-0.5 ${bg}" title="${s.state}: ${fmtNum(s.acs)} / ${fmtNum(s.total_acs)} ACs (${s.pct}%)">
-          <span class="text-[10.5px] font-bold ${tc}">${s.state}</span>
-          <span class="text-[12px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.acs)}</span>
-          <span class="text-[9px] text-gray-400 tabular-nums leading-none">${s.pct}%</span>
+        <div class="flex flex-col items-center justify-center border py-1.5 px-0.5 rounded-lg gap-0.5 ${bg} text-center leading-tight" title="${s.state}: ${fmtNum(s.acs)} / ${fmtNum(s.total_acs)} ACs (${s.pct}%)">
+          <span class="text-[10px] font-bold ${tc}">${s.state}</span>
+          <span class="text-[11px] font-black text-gray-900 tabular-nums leading-none">${fmtNum(s.acs)}</span>
+          <span class="text-[9px] text-gray-400 tabular-nums leading-none">${Math.round(p)}%</span>
         </div>
       `;
     }).join('');
@@ -1419,8 +1961,8 @@ function populateForm20Card(d) {
 
   setEl('f20-pct',       pct + '%');
   setEl('f20-pct-label', 'coverage');
-  setEl('f20-pct-badge', pct + '% complete');
-  setEl('f20-counts',    `${form20.toLocaleString()} / ${acpc.toLocaleString()} elections in Form 20`);
+  setEl('f20-pct-badge', pct + '%');
+  setEl('f20-counts',    `AC-Level Granular Coverage | ${form20.toLocaleString()} / ${acpc.toLocaleString()} elections processed`);
 
   // Hero ribbon — pipeline coverage
   setEl('hero-pipeline',     pct + '%');
@@ -1469,18 +2011,22 @@ function populateForm20Card(d) {
   // ── Top states from Form 20 ───────────────────────────────────────────────
   const stateWrap = document.getElementById('f20-state-rows');
   if (stateWrap && d.top_states && d.top_states.length > 0) {
-    // (STATE_AC_COUNTS is defined at module level)
-    const max = d.top_states[0]?.count || 1;
+    const topStates = d.top_states;
+    const maxMissing = Math.max(...topStates.map(s => s.missing_years), 1);
+    
     stateWrap.className = 'grid grid-cols-4 gap-1.5';
-    stateWrap.innerHTML = d.top_states.map(s => {
-      const intensity = Math.round((s.count / max) * 9) + 1;
-      const bg = intensity >= 8 ? 'bg-gray-100 border-gray-300' :
-                 intensity >= 5 ? 'bg-gray-50 border-gray-200' : 'bg-gray-50 border-gray-100';
-      const tc = intensity >= 8 ? 'text-gray-800' : 'text-gray-600';
+    stateWrap.innerHTML = topStates.map(s => {
+      const intensity = Math.round((s.missing_years / maxMissing) * 9) + 1;
+      
+      const bg = intensity >= 8 ? 'bg-red-50 border-red-100' :
+                 intensity >= 4 ? 'bg-orange-50 border-orange-100' : 'bg-gray-50 border-gray-100';
+      const tc = intensity >= 8 ? 'text-red-600' : intensity >= 4 ? 'text-orange-600' : 'text-gray-600';
+      
       return `
-        <div class="flex flex-col items-center justify-center py-1.5 rounded-lg border ${bg} gap-0.5" title="${s.state}: ${fmtNum(s.count)} ACs (${s.pct ?? 0}%)">
-          <span class="text-[11px] font-bold ${tc}">${s.state} - ${s.pct ?? 0}%</span>
-          <span class="text-[10px] font-semibold text-gray-600 tabular-nums leading-none">AC - ${fmtNum(s.count)}</span>
+        <div class="flex flex-col items-center justify-center py-1.5 px-0.5 rounded-lg border ${bg} gap-0.5 text-center leading-tight">
+          <span class="text-[10px] font-bold ${tc}">${s.state}</span>
+          <span class="text-[9px] font-bold ${tc}">${Math.round(s.pct)}%</span>
+          <span class="text-[8.5px] font-medium text-gray-500 tabular-nums mt-0.5">${s.missing_years} yrs missing</span>
         </div>`;
     }).join('');
   }
@@ -1749,13 +2295,13 @@ async function loadGlancePanel() {
     });
 
     const stateNames = {
-      AP:'Andhra Pradesh', AR:'Arunachal Pradesh', AS:'Assam', BR:'Bihar', CG:'Chhattisgarh',
+      AP:'Andhra Pradesh', AR:'Arunachal Pradesh', AS:'Assam', BR:'Bihar', CG:'Chandigarh',
       GA:'Goa', GJ:'Gujarat', HR:'Haryana', HP:'Himachal Pradesh', JH:'Jharkhand',
       KA:'Karnataka', KL:'Kerala', MP:'Madhya Pradesh', MH:'Maharashtra', MN:'Manipur',
       ML:'Meghalaya', MZ:'Mizoram', NL:'Nagaland', OR:'Odisha', PB:'Punjab',
       RJ:'Rajasthan', SK:'Sikkim', TN:'Tamil Nadu', TR:'Tripura', UP:'Uttar Pradesh',
       UK:'Uttarakhand', WB:'West Bengal', TS:'Telangana', DL:'Delhi', JK:'Jammu & Kashmir',
-      LA:'Ladakh', AN:'Andaman & Nicobar', CH:'Chandigarh', PY:'Puducherry', LD:'Lakshadweep',
+      LA:'Ladakh', AN:'Andaman & Nicobar', PY:'Puducherry', LD:'Lakshadweep',
       CT:'Chhattisgarh',
     };
 
@@ -2095,10 +2641,10 @@ async function renderGlanceMomentumAndTable() {
   };
 
   // Only Form 20 carries real data; Retro / Booth / Caste stay flat at zero.
-  const f20vals   = series.map(s => s.f20);
-  const retrovals = series.map(() => 0);
-  const boothvals = series.map(() => 0);
-  const castevals = series.map(() => 0);
+  const f20vals   = series.map(s => s.f20 || 0);
+  const retrovals = series.map(s => s.retro_total || 0);
+  const boothvals = series.map(s => s.booth_total || 0);
+  const castevals = series.map(s => s.caste_total || 0);
 
   const chartOpts = (rawSets) => ({
     responsive: true, maintainAspectRatio: false,
@@ -2245,7 +2791,7 @@ async function renderGlanceMomentumAndTable() {
   // ── Shared helpers ─────────────────────────────────────────────────────────
   const FULL_NAMES = {
     AP:'Andhra Pradesh', AR:'Arunachal Pradesh', AS:'Assam', BR:'Bihar',
-    CG:'Chandigarh', CT:'Chhattisgarh', GA:'Goa', GJ:'Gujarat', HR:'Haryana',
+    CT:'Chhattisgarh', GA:'Goa', GJ:'Gujarat', HR:'Haryana',
     HP:'Himachal Pradesh', JH:'Jharkhand', JK:'Jammu & Kashmir', KA:'Karnataka',
     KL:'Kerala', LA:'Ladakh', LD:'Lakshadweep', MP:'Madhya Pradesh',
     MH:'Maharashtra', MN:'Manipur', ML:'Meghalaya', MZ:'Mizoram', NL:'Nagaland',

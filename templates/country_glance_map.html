@@ -46,6 +46,10 @@
       font-size: 18px; vertical-align: middle; line-height: 1;
     }
 
+    /* Hide scrollbar for mobile horizontal scroll */
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
     /* ── Exact nav-tab from index.html & country_glance_test.html ── */
     .nav-tab { position: relative; transition: color 0.1s, background 0.1s; }
     .nav-tab.active { color: #111827; font-weight: 600; }
@@ -83,7 +87,7 @@
     .metric-btn-inactive { background:#f9fafb; color:#374151; border-color:#e5e7eb; }
     .metric-btn-inactive:hover { background:#f3f4f6; }
 
-    /* ── Custom Tooltip ── */
+    /* ── Custom Tooltip — hidden on mobile, shown on hover on desktop ── */
     .map-tooltip {
       position: absolute;
       pointer-events: none;
@@ -98,8 +102,12 @@
       color: #111827;
       font-size: 12px;
       display: none;
-      min-width: 230px;
-      max-width: 280px;
+      min-width: 220px;
+      max-width: 270px;
+    }
+    @media (max-width: 767px) {
+      /* On mobile, tooltip is replaced by a tap-info bar at map bottom */
+      .map-tooltip { display: none !important; }
     }
 
     /* ── Loading overlay ── */
@@ -125,20 +133,22 @@
       font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
       padding: 4px 10px; border-radius: 99px; cursor: pointer; transition: all 0.2s;
     }
+    @media (max-width: 767px) {
+      .level-badge { padding: 6px 12px; font-size: 12px; } /* bigger tap targets */
+    }
     .level-inactive { background: #ffffff; color: #6b7280; border: 1px solid #e5e7eb; }
     .level-inactive:hover { background: #f9fafb; color: #374151; }
-    
     .level-state-active    { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
     .level-district-active { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
     .level-pc-active       { background: #fdf4ff; color: #a21caf; border: 1px solid #fae8ff; }
     .level-ac-active       { background: #fffbeb; color: #b45309; border: 1px solid #fef3c7; }
-
 
     /* ── Analytics Panel ── */
     #analytics-panel {
       position: fixed;
       top: 56px; right: 0;
       width: 380px;
+      max-width: 100vw;
       height: calc(100vh - 56px);
       background: rgba(255, 255, 255, 0.97);
       backdrop-filter: blur(16px);
@@ -155,26 +165,134 @@
     #analytics-panel::-webkit-scrollbar { width: 4px; }
     #analytics-panel::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 4px; }
 
+    /* ── MOBILE BOTTOM SHEET (control panel) ── */
+    @media (max-width: 767px) {
+      /* Nav: smaller height, allow horizontal scroll */
+      nav { height: 44px !important; padding-left: 12px !important; padding-right: 12px !important; }
+      nav .text-\[14px\] { font-size: 12px !important; }
+
+      /* Map canvas starts below the 44px nav */
+      #deck-canvas-container {
+        top: 44px;
+        /* bottom is calculated by JS based on sheet height */
+        bottom: 0;
+      }
+      #loading-overlay { top: 44px; }
+
+      /* The aside becomes a bottom sheet */
+      #control-panel {
+        position: fixed !important;
+        bottom: 0 !important; left: 0 !important; right: 0 !important; top: auto !important;
+        width: 100% !important;
+        border-radius: 20px 20px 0 0 !important;
+        max-height: 52vh !important;
+        min-height: 120px !important;
+        padding: 0 16px 12px !important;
+        overflow-y: auto;
+        box-shadow: 0 -8px 30px rgba(0,0,0,0.12) !important;
+        z-index: 40;
+        /* Start collapsed, expand on tap */
+        transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1);
+      }
+      #control-panel.sheet-collapsed {
+        max-height: 68px !important;
+        overflow: hidden;
+      }
+      #control-panel.search-active {
+        max-height: calc(100dvh - 56px) !important;
+        height: calc(100dvh - 56px) !important;
+        border-radius: 0 !important;
+        bottom: 0 !important;
+        z-index: 60 !important;
+      }
+
+      /* Drag handle pill */
+      #sheet-drag-handle {
+        display: flex !important;
+      }
+
+      /* Hide the title row description text on mobile to save space */
+      #panel-live-badge { display: none; }
+
+      /* Metric buttons: two per row on mobile */
+      #group-opts-eci .metric-grid,
+      #group-opts-other .metric-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+
+      /* Tap info bar — removed in favor of bottom sheet injection */
+      #mobile-tap-info {
+        display: none !important;
+      }
+    }
+
+    /* Drag handle (hidden on desktop) */
+    #sheet-drag-handle {
+      display: none;
+      justify-content: center;
+      padding: 10px 0 6px;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    #sheet-drag-handle span {
+      width: 36px; height: 4px;
+      background: #d1d5db;
+      border-radius: 99px;
+      display: block;
+    }
+
+    /* Mobile tap info bar */
+    #mobile-tap-info {
+      display: none;
+      position: fixed;
+      left: 12px; right: 12px;
+      /* sits just above the sheet */
+      z-index: 45;
+      background: rgba(255,255,255,0.97);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 14px;
+      padding: 10px 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #111827;
+      transition: bottom 0.35s cubic-bezier(0.4,0,0.2,1);
+    }
+    #mobile-tap-info .tap-score {
+      margin-left: auto;
+      font-size: 12px; font-weight: 700; font-family: monospace;
+      background: #f0fdf4; color: #15803d;
+      border: 1px solid #bbf7d0;
+      padding: 3px 8px; border-radius: 8px;
+    }
+
     /* State search dropdown */
     #state-search-results {
       position: absolute; top: 100%; left: 0; right: 0;
       background: white; border: 1px solid #e5e7eb; border-radius: 10px;
       box-shadow: 0 8px 25px -5px rgba(0,0,0,0.12);
-      max-height: 240px; overflow-y: auto; z-index: 60; display: none;
+      max-height: 200px; overflow-y: auto; z-index: 60; display: none;
     }
     #state-search-results .search-item {
-      padding: 7px 12px; cursor: pointer; font-size: 12px; font-weight: 500;
+      padding: 9px 12px; cursor: pointer; font-size: 12px; font-weight: 500;
       color: #374151; display: flex; align-items: center; gap: 8px;
       transition: background 0.1s;
     }
-    #state-search-results .search-item:hover { background: #f3f4f6; }
+    #state-search-results .search-item:hover,
+    #state-search-results .search-item:active { background: #f3f4f6; }
     #state-search-results .search-item .search-abb {
       font-size: 10px; font-weight: 700; color: #9ca3af;
       background: #f3f4f6; padding: 2px 6px; border-radius: 4px;
       min-width: 28px; text-align: center;
     }
 
-    /* Selected state highlight on map */
+    /* Selected state badge */
     .state-selected-badge {
       display: inline-flex; align-items: center; gap: 5px;
       background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8;
@@ -193,28 +311,28 @@
 <!-- ═══════════════════════════════════════════
      TOP NAVIGATION — exact match to index.html
 ═══════════════════════════════════════════ -->
-<nav class="fixed top-0 left-0 w-full z-50 h-[56px] bg-white/75 backdrop-blur-xl border-b border-gray-200/60 flex items-center justify-between px-6 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] transition-all">
-  <div class="flex items-center gap-6 h-full">
+<nav class="fixed top-0 left-0 w-full z-50 h-[56px] bg-white/75 backdrop-blur-xl border-b border-gray-200/60 flex items-center justify-between px-4 md:px-6 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] transition-all gap-2">
+  <div class="flex items-center gap-3 md:gap-6 h-full min-w-0 flex-1">
     <!-- Logo -->
-    <div class="flex items-center gap-2.5 shrink-0">
+    <a href="/country-glance-map" class="flex items-center gap-2 shrink-0 cursor-pointer hover:opacity-80 transition-opacity">
       <div class="w-7 h-7 rounded-[8px] bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center shadow-md shadow-indigo-500/20">
         <span class="material-symbols-outlined text-white" style="font-size:15px;">ballot</span>
       </div>
-      <span class="text-[14px] font-extrabold text-gray-900 tracking-tight">Project CleanRoom</span>
-    </div>
-    <div class="w-px h-5 bg-gray-200 shrink-0 mx-1"></div>
+      <span class="text-[13px] md:text-[14px] font-extrabold text-gray-900 tracking-tight whitespace-nowrap">Project CleanRoom</span>
+    </a>
+    <div class="w-px h-5 bg-gray-200 shrink-0 mx-0 md:mx-1"></div>
     <!-- Tabs -->
-    <div class="hidden md:flex items-center h-full gap-1">
-      <a href="/"                   class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold cursor-pointer select-none transition-colors relative">Dashboard</a>
-      <a href="/#listing"           class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold cursor-pointer select-none transition-colors relative">Backlog Tracker</a>
-      <a href="/#glance"            class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold cursor-pointer select-none transition-colors relative">Weekly Report</a>
-      <a href="/#retro"             class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold cursor-pointer select-none transition-colors relative">Retro Export</a>
-      <a href="/country-glance-report" class="nav-tab active h-full px-3.5 flex items-center text-[13px] font-semibold cursor-pointer select-none transition-colors relative">Glance Report</a>
+    <div class="flex flex-1 min-w-0 overflow-x-auto whitespace-nowrap hide-scrollbar items-center h-full gap-1 px-1 md:px-0" style="-webkit-overflow-scrolling: touch;">
+      <a href="/country-glance-report" class="nav-tab active h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold cursor-pointer select-none transition-colors relative shrink-0">Glance Report</a>
+      <a href="/dashboard"                   class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold cursor-pointer select-none transition-colors relative shrink-0">Dashboard</a>
+      <a href="/dashboard#listing"           class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold cursor-pointer select-none transition-colors relative shrink-0">Backlog Tracker</a>
+      <a href="/dashboard#glance"            class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold cursor-pointer select-none transition-colors relative shrink-0">Weekly Report</a>
+      <a href="/dashboard#retro"             class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold cursor-pointer select-none transition-colors relative shrink-0">Retro Export</a>
     </div>
   </div>
   <!-- Right: profile -->
-  <div class="flex items-center gap-3">
-    <div class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
+  <div class="flex items-center gap-1.5 md:gap-3 shrink-0">
+    <div class="hidden sm:flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
       {% if user and user.picture %}
         <img src="{{ user.picture }}" alt="Profile" class="w-7 h-7 rounded-full border border-gray-200 shadow-sm">
       {% else %}
@@ -224,8 +342,8 @@
       {% endif %}
       <span class="text-[12.5px] font-bold text-gray-700 hidden md:block">{{ get_user_display_name(user) }}</span>
     </div>
-    <div class="w-px h-4 bg-gray-200 shrink-0"></div>
-    <a href="/logout" class="h-8 px-3.5 text-[12px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-all flex items-center shadow-[0_1px_2px_rgba(0,0,0,0.02)]">Logout</a>
+    <div class="hidden sm:block w-px h-4 bg-gray-200 shrink-0"></div>
+    <a href="/logout" class="h-8 px-2 md:px-3.5 text-[12px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-all flex items-center shadow-[0_1px_2px_rgba(0,0,0,0.02)] shrink-0">Logout</a>
   </div>
 </nav>
 
@@ -256,7 +374,32 @@
 <!-- ═══════════════════════════════════════════
      FLOATING CONTROL PANEL (LIGHT THEME)
 ═══════════════════════════════════════════ -->
-<aside class="fixed top-[72px] left-6 z-40 w-[288px] bg-white/90 backdrop-blur-md border border-gray-200/80 rounded-2xl p-5 space-y-4 shadow-lg shadow-gray-900/5 max-h-[calc(100vh-80px)] overflow-y-auto">
+<!-- Mobile tap info bar (shown above bottom sheet on mobile when a region is tapped) -->
+<div id="mobile-tap-info">
+  <span id="mobile-tap-region" class="truncate">Tap a region</span>
+  <span id="mobile-tap-sub" class="text-[10px] text-gray-400 font-normal truncate"></span>
+  <span id="mobile-tap-score" class="tap-score">–%</span>
+</div>
+
+<aside id="control-panel" class="fixed z-40 bg-white/90 backdrop-blur-md border border-gray-200/80 shadow-lg shadow-gray-900/5 overflow-y-auto transition-all bottom-0 left-0 w-full rounded-t-2xl md:top-[72px] md:bottom-auto md:left-6 md:w-[288px] md:rounded-2xl md:max-h-[calc(100vh-80px)] md:p-5 md:space-y-4">
+
+  <!-- Drag handle (mobile only) -->
+  <div id="sheet-drag-handle" role="button" aria-label="Expand or collapse panel" onclick="toggleSheet()">
+    <span></span>
+  </div>
+
+  <div class="px-1 space-y-4">
+    <!-- Mobile Tap Details Container (Injected on tap) -->
+    <div id="mobile-details-injection" class="hidden md:hidden mb-1 mt-1 border border-gray-200 bg-white rounded-xl shadow-sm overflow-hidden transition-all duration-300">
+      <div class="flex justify-between items-center bg-gray-50 px-3 py-2 border-b border-gray-100">
+         <div>
+            <div id="mdi-region" class="font-bold text-gray-900 text-[13px] leading-tight">Region</div>
+            <div id="mdi-parent" class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Parent</div>
+         </div>
+         <div id="mdi-score" class="text-[11px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-transparent">--%</div>
+      </div>
+      <div id="mdi-body" class="p-3 text-[11px] text-gray-700 space-y-2 bg-white"></div>
+    </div>
 
   <div>
     <div class="flex items-center justify-between mb-3">
@@ -264,7 +407,7 @@
         <span class="material-symbols-outlined text-gray-700" style="font-size:18px;">explore</span>
         India Data Map
       </h1>
-      <span class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">Live RDS</span>
+      <span id="panel-live-badge" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">Live RDS</span>
     </div>
 
     <!-- Zoom Level Control -->
@@ -441,6 +584,7 @@
     </div>
   </div>
 
+  </div><!-- /px-1 -->
 </aside>
 
 <!-- Hover Tooltip Container -->
@@ -1069,7 +1213,8 @@
   async function loadStateData() {
     setLoadingText('Loading state coverage data...');
     try {
-      const res  = await fetch('/api/country_glance/data');
+      const timestamp = new Date().getTime();
+      const res  = await fetch(`/api/country_glance/data?t=${timestamp}`);
       const json = await res.json();
       if (json.matrix && json.matrix.length > 0) {
         stateData = json.matrix;
@@ -1164,6 +1309,13 @@
         setLoadingText('Loading AC boundaries (one-time)...');
         acGeoJSON = await (await fetch('/static/data/ac_constituencies.geojson')).json();
     }
+
+    // Fallback requirement: we need pcGeoJSON to render the J&K/Ladakh boundaries 
+    // when we are in AC or District views because their own shapefiles are missing those regions.
+    if ((granularity === 'ac' || granularity === 'district') && !pcGeoJSON) {
+        setLoadingText('Loading fallback boundaries (one-time)...');
+        pcGeoJSON = await (await fetch('/static/data/pc_constituencies.geojson')).json();
+    }
   }
 
   async function loadDataForCurrentGranularityAndMetric() {
@@ -1223,6 +1375,14 @@
     if (!deckgl) return;
     
     let isDataEmpty = false;
+
+    // Helper to identify J&K/Ladakh features
+    const isJK = (f) => {
+        const stateName = (f.properties.state_ut_name || f.properties.ST_NAME || f.properties.NAME_1 || '').toLowerCase();
+        const seatName = (f.properties.ls_seat_name || '').toLowerCase();
+        return stateName.includes('jammu') || seatName.includes('jammu') || 
+               stateName.includes('ladakh') || seatName.includes('ladakh');
+    };
     let layerData = null;
     let layerId = '';
     let getFillColor = null;
@@ -1235,14 +1395,25 @@
         getFillColor = (feature) => {
             const row = getStateRow(feature.properties);
             const val = row ? (row[activeMetric] ?? -1) : -1;
+
+            // Dim non-selected states when a state is selected
+            if (selectedState) {
+              const normSelected = normalizeStateName(selectedState.state_name);
+              const normFeature = normalizeStateName(feature.properties.NAME_1 || feature.properties.ST_NAME || '');
+              if (normSelected !== normFeature && !normSelected.includes(normFeature) && !normFeature.includes(normSelected)) {
+                const c = getRGBA(val);
+                return [c[0], c[1], c[2], 60]; // dim unselected
+              }
+            }
             return getRGBA(val);
         };
         onHover = onStateHover;
-        updateTrig = { getFillColor: [activeMetric, stateData.length] };
+        updateTrig = { getFillColor: [activeMetric, stateData.length, selectedState ? selectedState.state_abb : ''] };
     } else if (activeGranularity === 'district' && districtGeoJSON) {
         layerData = districtGeoJSON;
         layerId = 'india-district-layer';
         getFillColor = (feature) => {
+            if (isJK(feature)) return [0, 0, 0, 0]; // Transparent to show fallback layer underneath
             const info = getDistrictPct(feature.properties);
             return getRGBA(info ? info.pct : 0);
         };
@@ -1261,6 +1432,7 @@
         layerData = acGeoJSON;
         layerId = 'india-ac-layer';
         getFillColor = (feature) => {
+            if (isJK(feature)) return [0, 0, 0, 0]; // Transparent to show fallback layer underneath
             const info = getACPct(feature.properties);
             return getRGBA(info ? info.pct : 0);
         };
@@ -1295,7 +1467,10 @@
             filled: true,
             lineWidthMinPixels: activeGranularity === 'state' ? 1.5 : 0.8,
             getFillColor: getFillColor,
-            getLineColor: [255, 255, 255, activeGranularity === 'state' ? 220 : 180],
+            getLineColor: (feature) => {
+                if (activeGranularity !== 'state' && activeGranularity !== 'pc' && isJK(feature)) return [0, 0, 0, 0];
+                return [255, 255, 255, activeGranularity === 'state' ? 220 : 180];
+            },
             lineWidthScale: 1,
             autoHighlight: true,
             highlightColor: [255, 255, 255, 100],
@@ -1304,22 +1479,49 @@
         })
     ];
 
+    // J&K and Ladakh Fallback Layer
+    if (activeGranularity !== 'state' && activeGranularity !== 'pc' && pcGeoJSON) {
+      const jkFeatures = pcGeoJSON.features.filter(isJK);
+      
+      if (jkFeatures.length > 0) {
+        layersToRender.unshift(new deck.GeoJsonLayer({
+          id: 'jk-fallback-pc-layer',
+          data: { type: 'FeatureCollection', features: jkFeatures },
+          stroked: true,
+          filled: true,
+          lineWidthMinPixels: 1,
+          getFillColor: [220, 38, 38, 200], // Red (0% coverage)
+          getLineColor: [255, 255, 255, 180], // White border
+          pickable: true,
+          onHover: function(info) {
+            const tooltip = document.getElementById('map-tooltip');
+            if (info.object) {
+              const seatName = info.object.properties.ls_seat_name || info.object.properties.state_ut_name || 'Missing Region';
+              document.getElementById('tooltip-region').textContent = seatName;
+              document.getElementById('tooltip-parent').textContent = 'Data incomplete at ' + activeGranularity + ' level';
+              const scoreEl = document.getElementById('tooltip-score');
+              scoreEl.textContent = '0.0%';
+              scoreEl.className = 'text-[11px] font-mono font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded whitespace-nowrap';
+              document.getElementById('tooltip-details').innerHTML = '<div class="text-gray-400 mt-1">No data in DB</div>';
+              positionTooltip(tooltip, info.x, info.y);
+            } else {
+              tooltip.style.display = 'none';
+            }
+          }
+        }));
+      }
+    }
+
     if (activeGranularity !== 'state' && stateGeoJSON) {
-        layersToRender.push(
-            new deck.GeoJsonLayer({
-                id: 'india-state-overlay',
-                data: stateGeoJSON,
-                pickable: false,
-                stroked: true,
-                filled: false,
-                lineWidthMinPixels: 2.5,
-                getLineColor: [0, 0, 0, 255], // Solid black for extreme visibility
-                lineWidthScale: 1,
-                parameters: {
-                    depthTest: false // Ensures this layer draws ON TOP of the PC/AC layer regardless of z-fighting
-                }
-            })
-        );
+      layersToRender.push(new deck.GeoJsonLayer({
+        id: 'state-boundary-overlay',
+        data: stateGeoJSON,
+        filled: false,
+        stroked: true,
+        lineWidthMinPixels: 1.8,
+        getLineColor: [160, 160, 160, 255], 
+        pickable: false 
+      }));
     }
 
     deckgl.setProps({
@@ -1375,7 +1577,14 @@
 
     const props = info.object.properties;
     const distName  = props.NAME_2 || 'District';
-    const stateName = props.NAME_1 || 'State';
+    let stateName = props.NAME_1 || 'State';
+    
+    // Override old GeoJSON AP to Telangana for mapped districts
+    const stateAbb = getStateAbbFromGeoName(stateName);
+    const normDist = normalizeDistrictName(distName);
+    if (stateAbb === 'AP' && DISTRICT_ALIASES[`AP|${normDist}`] && DISTRICT_ALIASES[`AP|${normDist}`].startsWith('TS|')) {
+        stateName = 'Telangana';
+    }
     const distInfo  = getDistrictPct(props);
     const pct       = distInfo ? distInfo.pct : 0;
     const covered   = distInfo ? distInfo.covered : 0;
@@ -1413,7 +1622,7 @@
         <span class="font-mono font-semibold">${covered.toLocaleString()}</span>
       </div>
       <div class="flex justify-between py-0.5 text-gray-700">
-        <span>Total entries</span>
+        <span>Total</span>
         <span class="font-mono font-semibold">${total.toLocaleString()}</span>
       </div>
       <div class="mt-1.5 pt-1.5 border-t border-gray-100 flex justify-between font-semibold text-gray-900">
@@ -1432,7 +1641,7 @@
 
     const props = info.object.properties;
     const pcName = props.ls_seat_name || props.PC_NAME || props.pc_name || 'PC';
-    const stateName = props.ST_NAME || props.st_name || props.NAME_1 || 'State';
+    const stateName = props.state_ut_name || props.STATE_NAME || props.ST_NAME || props.st_name || props.state_name || props.NAME_1 || 'State';
     const pcInfo = getPCPct(props);
     const pct = pcInfo ? pcInfo.pct : 0;
     const covered = pcInfo ? pcInfo.covered : 0;
@@ -1460,7 +1669,7 @@
         <span class="font-mono font-semibold">${covered.toLocaleString()}</span>
       </div>
       <div class="flex justify-between py-0.5 text-gray-700">
-        <span>Total entries</span>
+        <span>Total</span>
         <span class="font-mono font-semibold">${total.toLocaleString()}</span>
       </div>
       <div class="mt-1.5 pt-1.5 border-t border-gray-100 flex justify-between font-semibold text-gray-900">
@@ -1507,7 +1716,7 @@
         <span class="font-mono font-semibold">${covered.toLocaleString()}</span>
       </div>
       <div class="flex justify-between py-0.5 text-gray-700">
-        <span>Total entries</span>
+        <span>Total</span>
         <span class="font-mono font-semibold">${total.toLocaleString()}</span>
       </div>
       <div class="mt-1.5 pt-1.5 border-t border-gray-100 flex justify-between font-semibold text-gray-900">
@@ -1522,6 +1731,28 @@
 
   function positionTooltip(tooltip, x, y) {
     tooltip.style.display = 'block';
+    
+    // Wire up mobile tap info
+    if (window.showMobileTapInfo) {
+      const region = document.getElementById('tooltip-region').textContent;
+      const parent = document.getElementById('tooltip-parent').textContent;
+      const scoreEl = document.getElementById('tooltip-score');
+      const pctStr = scoreEl.textContent;
+      const pct = pctStr !== '–%' ? parseFloat(pctStr) : null;
+      // Extract color from the tailwind class of scoreEl, or fallback
+      let bgClass = Array.from(scoreEl.classList).find(c => c.startsWith('bg-'));
+      let color = null;
+      if (bgClass === 'bg-emerald-50') color = '#059669';
+      else if (bgClass === 'bg-amber-50') color = '#d97706';
+      else if (bgClass === 'bg-yellow-50') color = '#ca8a04';
+      else if (bgClass === 'bg-orange-50') color = '#ea580c';
+      else if (bgClass === 'bg-red-50') color = '#dc2626';
+      else if (bgClass === 'bg-gray-50') color = '#9ca3af';
+      
+      const detailsHtml = document.getElementById('tooltip-details').innerHTML;
+      window.showMobileTapInfo(region, parent, pct, color, detailsHtml, bgClass);
+    }
+    
     const panelWidth = 280;
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
@@ -1534,6 +1765,14 @@
   }
 
   // ─── UI switching ──────────────────────────────────────────────────────────
+  function updateMainTabUI() {
+    const eciActive = activeMainTab === 'eci';
+    document.getElementById('main-tab-eci').className   = eciActive ? 'filter-tab-active flex-1 py-1.5 rounded-lg text-center transition-all' : 'filter-tab-inactive flex-1 py-1.5 rounded-lg text-center transition-all';
+    document.getElementById('main-tab-other').className = eciActive ? 'filter-tab-inactive flex-1 py-1.5 rounded-lg text-center transition-all' : 'filter-tab-active flex-1 py-1.5 rounded-lg text-center transition-all';
+    document.getElementById('group-opts-eci').className   = eciActive ? 'space-y-1.5' : 'hidden space-y-1.5';
+    document.getElementById('group-opts-other').className = eciActive ? 'hidden space-y-1.5' : 'space-y-1.5';
+  }
+
   function updateGranularityUI() {
     const isEci = activeMainTab === 'eci';
     document.getElementById('btn-gran-pc').style.display = isEci ? 'inline-flex' : 'none';
@@ -1579,13 +1818,18 @@
   async function switchMainTab(tab) {
     if (activeMainTab === tab) return;
     activeMainTab = tab;
+    updateMainTabUI();
+
+    // Clear selected region when switching sections
+    selectedState = null;
+    document.getElementById('selected-state-badge-wrap').classList.add('hidden');
+    document.getElementById('selected-state-label').textContent = '-';
+    closeAnalyticsPanel();
+    document.getElementById('map-tooltip').style.display = 'none';
+    const mdi = document.getElementById('mobile-details-injection');
+    if (mdi) mdi.classList.add('hidden');
     
-    const eciActive = tab === 'eci';
-    document.getElementById('main-tab-eci').className   = eciActive ? 'filter-tab-active flex-1 py-1.5 rounded-lg text-center transition-all' : 'filter-tab-inactive flex-1 py-1.5 rounded-lg text-center transition-all';
-    document.getElementById('main-tab-other').className = eciActive ? 'filter-tab-inactive flex-1 py-1.5 rounded-lg text-center transition-all' : 'filter-tab-active flex-1 py-1.5 rounded-lg text-center transition-all';
-    document.getElementById('group-opts-eci').className   = eciActive ? 'space-y-1.5' : 'hidden space-y-1.5';
-    document.getElementById('group-opts-other').className = eciActive ? 'hidden space-y-1.5' : 'space-y-1.5';
-    
+    const eciActive = activeMainTab === 'eci';
     activeMetric = eciActive ? 'retro' : 'ejal';
     
     if (eciActive && activeGranularity === 'district') {
@@ -1630,6 +1874,12 @@
   async function setGranularity(g) {
     if (g === activeGranularity) return;
     activeGranularity = g;
+
+    // Clear tooltips when granularity changes
+    document.getElementById('map-tooltip').style.display = 'none';
+    const mdi = document.getElementById('mobile-details-injection');
+    if (mdi) mdi.classList.add('hidden');
+    
     updateGranularityUI();
 
     showLoading(true);
@@ -1646,7 +1896,22 @@
   }
 
   // ─── Initialization ────────────────────────────────────────────────────────
+  function getResponsiveViewport() {
+    const w = window.innerWidth;
+    if (w < 480) {
+      return { longitude: 82.0, latitude: 19.5, zoom: 3.1, pitch: 0, bearing: 0 };
+    } else if (w < 768) {
+      return { longitude: 82.0, latitude: 22.0, zoom: 3.5, pitch: 0, bearing: 0 };
+    } else if (w < 1024) {
+      return { longitude: 82.5, latitude: 22.5, zoom: 4.0, pitch: 0, bearing: 0 };
+    } else {
+      return { longitude: 82.5, latitude: 22.5, zoom: 4.3, pitch: 0, bearing: 0 };
+    }
+  }
+
   async function initDeckGL() {
+    updateMainTabUI();
+    updateGranularityUI();
     showLoading(true);
 
     try {
@@ -1666,12 +1931,14 @@
         console.error('GeoJSON fetch error:', e);
       }
 
+      const initialVP = getResponsiveViewport();
+
       try {
         maplibre = new maplibregl.Map({
           container: 'maplibre-bg',
           style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-          center: [82.5, 22.5],
-          zoom: 4.3,
+          center: [initialVP.longitude, initialVP.latitude],
+          zoom: initialVP.zoom,
           interactive: false
         });
       } catch (mErr) {
@@ -1680,13 +1947,7 @@
 
       deckgl = new deck.DeckGL({
         container: 'deck-canvas-container',
-        initialViewState: {
-          longitude: 82.5,
-          latitude: 22.5,
-          zoom: 4.3,
-          pitch: 0,
-          bearing: 0
-        },
+        initialViewState: initialVP,
         controller: true,
         onViewStateChange: ({ viewState }) => {
           if (maplibre) {
@@ -1724,7 +1985,8 @@
   loadStateData = async function() {
     setLoadingText('Loading state coverage data...');
     try {
-      const res  = await fetch('/api/country_glance/data');
+      const timestamp = new Date().getTime();
+      const res  = await fetch(`/api/country_glance/data?t=${timestamp}`);
       const json = await res.json();
       if (json.matrix && json.matrix.length > 0) {
         stateData = json.matrix;
@@ -1740,16 +2002,21 @@
     }
   };
 
-  // ─── State Search ─────────────────────────────────────────────────────────
   function onStateSearchInput() {
     const input = document.getElementById('state-search-map');
+    const panel = document.getElementById('control-panel');
+    if (document.activeElement === input && window.innerWidth < 768 && panel) {
+      panel.classList.add('search-active');
+      if (window.setSheetState) window.setSheetState(false);
+    }
+
     const q = input.value.toLowerCase().trim();
     const container = document.getElementById('state-search-results');
     const clearBtn = document.getElementById('state-search-clear');
 
     clearBtn.classList.toggle('hidden', !q);
 
-    if (!q && !document.activeElement === input) {
+    if (!q && document.activeElement !== input) {
       container.style.display = 'none';
       return;
     }
@@ -1765,7 +2032,7 @@
     }
 
     container.innerHTML = matches.map(r =>
-      `<div class="search-item" onclick="selectStateByName('${r.state_name.replace(/'/g, "\'")}')">
+      `<div class="search-item" onclick="selectStateByName('${r.state_name.replace(/'/g, "\\'")}')">
         <span class="search-abb">${r.state_abb}</span>
         <span>${r.state_name}</span>
         <span class="ml-auto text-[10px] font-mono text-gray-400">${parseFloat(r[activeMetric] || 0).toFixed(1)}%</span>
@@ -1775,7 +2042,9 @@
   }
 
   function clearStateSearch() {
-    document.getElementById('state-search-map').value = '';
+    const input = document.getElementById('state-search-map');
+    input.value = '';
+    input.blur();
     document.getElementById('state-search-results').style.display = 'none';
     document.getElementById('state-search-clear').classList.add('hidden');
   }
@@ -1807,6 +2076,15 @@
 
     // Re-render to highlight selected state
     renderLayers();
+
+    // Automatically collapse the search sheet on mobile
+    if (window.innerWidth < 768) {
+      const panel = document.getElementById('control-panel');
+      if (panel) {
+        panel.classList.remove('search-active');
+        if (window.setSheetState) window.setSheetState(true);
+      }
+    }
   }
 
   function deselectState() {
@@ -1819,7 +2097,7 @@
     if (deckgl) {
       deckgl.setProps({
         initialViewState: {
-          longitude: 82.5, latitude: 22.5, zoom: 4.3, pitch: 0, bearing: 0,
+          ...getResponsiveViewport(),
           transitionDuration: 800,
           transitionInterpolator: new deck.FlyToInterpolator()
         }
@@ -2131,121 +2409,7 @@
     ).join('');
   }
 
-  // ─── Click Handler for State Selection ────────────────────────────────────
-  // We need to modify the renderLayers function to add onClick
-  const origRenderLayers = renderLayers;
-  renderLayers = function() {
-    if (!deckgl) return;
-    
-    let isDataEmpty = false;
-    let layerData = null;
-    let layerId = '';
-    let getFillColor = null;
-    let onHover = null;
-    let updateTrig = {};
-    
-    if (activeGranularity === 'state' && stateGeoJSON) {
-        layerData = stateGeoJSON;
-        layerId = 'india-state-layer';
-        getFillColor = (feature) => {
-            const row = getStateRow(feature.properties);
-            const val = row ? (row[activeMetric] ?? -1) : -1;
 
-            // Dim non-selected states when a state is selected
-            if (selectedState) {
-              const normSelected = normalizeStateName(selectedState.state_name);
-              const normFeature = normalizeStateName(feature.properties.NAME_1 || feature.properties.ST_NAME || '');
-              if (normSelected !== normFeature && !normSelected.includes(normFeature) && !normFeature.includes(normSelected)) {
-                const c = getRGBA(val);
-                return [c[0], c[1], c[2], 60]; // dim unselected
-              }
-            }
-            return getRGBA(val);
-        };
-        onHover = onStateHover;
-        updateTrig = { getFillColor: [activeMetric, stateData.length, selectedState ? selectedState.state_abb : ''] };
-    } else if (activeGranularity === 'district' && districtGeoJSON) {
-        layerData = districtGeoJSON;
-        layerId = 'india-district-layer';
-        getFillColor = (feature) => {
-            const info = getDistrictPct(feature.properties);
-            return getRGBA(info ? info.pct : 0);
-        };
-        onHover = onDistrictHover;
-        updateTrig = { getFillColor: [activeMetric, Object.keys(districtCache).join(',')] };
-    } else if (activeGranularity === 'pc' && pcGeoJSON) {
-        layerData = pcGeoJSON;
-        layerId = 'india-pc-layer';
-        getFillColor = (feature) => {
-            const info = getPCPct(feature.properties);
-            return getRGBA(info ? info.pct : 0);
-        };
-        onHover = onPCHover;
-        updateTrig = { getFillColor: [activeMetric, pcCache[activeMetric] ? 'loaded' : 'none'] };
-    } else if (activeGranularity === 'ac' && acGeoJSON) {
-        layerData = acGeoJSON;
-        layerId = 'india-ac-layer';
-        getFillColor = (feature) => {
-            const info = getACPct(feature.properties);
-            return getRGBA(info ? info.pct : 0);
-        };
-        onHover = onACHover;
-        updateTrig = { getFillColor: [activeMetric, acCache[activeMetric] ? 'loaded' : 'none'] };
-    }
-    
-    if (!layerData) return;
-
-    if (activeGranularity === 'state') {
-        const sum = stateData.reduce((acc, row) => acc + (row[activeMetric] || 0), 0);
-        if (sum === 0) isDataEmpty = true;
-    } else if (activeGranularity === 'district') {
-        const c = districtCache[activeMetric];
-        if (!c || Object.keys(c).length === 0) isDataEmpty = true;
-    } else if (activeGranularity === 'pc') {
-        const c = pcCache[activeMetric];
-        if (!c || Object.keys(c || {}).length === 0) isDataEmpty = true;
-    } else if (activeGranularity === 'ac') {
-        const c = acCache[activeMetric];
-        if (!c || Object.keys(c || {}).length === 0) isDataEmpty = true;
-    }
-    
-    showNoDataWarning(isDataEmpty);
-
-    const layerConfig = {
-      id: layerId,
-      data: layerData,
-      pickable: true,
-      stroked: true,
-      filled: true,
-      lineWidthMinPixels: activeGranularity === 'state' ? 1.5 : 0.8,
-      getFillColor: getFillColor,
-      getLineColor: [255, 255, 255, activeGranularity === 'state' ? 220 : 180],
-      lineWidthScale: 1,
-      autoHighlight: true,
-      highlightColor: [255, 255, 255, 100],
-      onHover: onHover,
-      updateTriggers: updateTrig
-    };
-
-    // Add click handler for state level
-    if (activeGranularity === 'state') {
-      layerConfig.onClick = function(info) {
-        if (!info.object) return;
-        const row = getStateRow(info.object.properties);
-        if (row) {
-          if (selectedState && selectedState.state_name === row.state_name) {
-            deselectState();
-          } else {
-            selectStateByName(row.state_name);
-          }
-        }
-      };
-    }
-
-    deckgl.setProps({
-      layers: [new deck.GeoJsonLayer(layerConfig)]
-    });
-  };
 
   document.addEventListener('DOMContentLoaded', initDeckGL);
 </script>
@@ -2255,7 +2419,7 @@
      RIGHT ANALYTICS PANEL (Slides in on state click)
 ═══════════════════════════════════════════ -->
 <div id="analytics-panel">
-  <div class="p-5 space-y-5">
+  <div class="p-5 pb-20 space-y-5">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
@@ -2344,6 +2508,194 @@
     </div>
   </div>
 </div>
+
+<script>
+// ─── Mobile / Responsive Helpers ──────────────────────────────────────────
+(function() {
+  var IS_MOBILE = window.innerWidth < 768;
+  var panel = document.getElementById('control-panel');
+  var tapInfo = document.getElementById('mobile-tap-info');
+  var canvas = document.getElementById('deck-canvas-container');
+  var sheetCollapsed = false;
+
+  function isMobile() { return window.innerWidth < 768; }
+
+  // ── Sheet toggle (drag handle tap) ────────────────────────────────────
+  var sheetDidDrag = false;
+  window.toggleSheet = function() {
+    if (!isMobile() || !panel) return;
+    if (sheetDidDrag) return; 
+
+    if (panel.classList.contains('search-active')) {
+      panel.classList.remove('search-active');
+      sheetCollapsed = false;
+      panel.classList.remove('sheet-collapsed');
+    } else if (sheetCollapsed) {
+      sheetCollapsed = false;
+      panel.classList.remove('sheet-collapsed');
+    } else {
+      sheetCollapsed = true;
+      panel.classList.add('sheet-collapsed');
+    }
+    
+    updateTapInfoPosition();
+    setTimeout(function() { if (window.deckgl) { try { window.deckgl.redraw(true); } catch(e){} } }, 400);
+  };
+
+  window.setSheetState = function(collapsed) {
+    if (!isMobile() || !panel) return;
+    sheetCollapsed = collapsed;
+    panel.classList.toggle('sheet-collapsed', sheetCollapsed);
+    updateTapInfoPosition();
+    setTimeout(function() { if (window.deckgl) { try { window.deckgl.redraw(true); } catch(e){} } }, 400);
+  };
+
+  // ── Sheet drag/slide support ──────────────────────────────────────────
+  var handle = document.getElementById('sheet-drag-handle');
+  if (handle) {
+    var startY = 0, currentY = 0, initialHeight = 0, isDragging = false;
+    handle.addEventListener('touchstart', function(e) {
+      if (!isMobile() || !panel) return;
+      
+      startY = e.touches[0].clientY;
+      currentY = startY;
+      initialHeight = panel.getBoundingClientRect().height;
+      
+      if (panel.classList.contains('search-active')) {
+         panel.classList.remove('search-active');
+         panel.style.maxHeight = initialHeight + 'px';
+      }
+      
+      isDragging = true;
+      sheetDidDrag = false;
+      panel.style.transition = 'none';
+    }, {passive: true});
+
+    handle.addEventListener('touchmove', function(e) {
+      if (!isDragging) return;
+      currentY = e.touches[0].clientY;
+      var deltaY = startY - currentY; // positive means dragging UP
+      if (Math.abs(deltaY) > 10) sheetDidDrag = true;
+
+      var newHeight = initialHeight + deltaY;
+      var maxHeightPx = window.innerHeight - 56;
+      var minHeightPx = 68;
+      
+      if (newHeight < minHeightPx) newHeight = minHeightPx;
+      if (newHeight > maxHeightPx) newHeight = maxHeightPx;
+      panel.style.maxHeight = newHeight + 'px';
+    }, {passive: true});
+
+    handle.addEventListener('touchend', function(e) {
+      if (!isDragging) return;
+      isDragging = false;
+      panel.style.transition = '';
+      
+      if (sheetDidDrag) {
+        var deltaY = startY - currentY;
+        var finalHeight = initialHeight + deltaY;
+        var halfHeight = window.innerHeight * 0.52;
+        
+        panel.style.maxHeight = ''; // Remove inline style
+        
+        if (deltaY > 20) { // dragged up
+           if (finalHeight > halfHeight + 30) {
+               panel.classList.add('search-active');
+               sheetCollapsed = false;
+               panel.classList.remove('sheet-collapsed');
+           } else {
+               panel.classList.remove('search-active');
+               sheetCollapsed = false;
+               panel.classList.remove('sheet-collapsed');
+           }
+        } else if (deltaY < -20) { // dragged down
+           if (finalHeight < halfHeight - 30) {
+               panel.classList.remove('search-active');
+               sheetCollapsed = true;
+               panel.classList.add('sheet-collapsed');
+           } else {
+               panel.classList.remove('search-active');
+               sheetCollapsed = false;
+               panel.classList.remove('sheet-collapsed');
+           }
+        } else {
+          // didn't move much, revert to closest state based on height
+          if (initialHeight > halfHeight + 10) {
+             panel.classList.add('search-active');
+             sheetCollapsed = false;
+             panel.classList.remove('sheet-collapsed');
+          } else {
+             panel.classList.remove('search-active');
+             panel.classList.toggle('sheet-collapsed', sheetCollapsed);
+          }
+        }
+        
+        updateTapInfoPosition();
+        setTimeout(function() { if (window.deckgl) { try { window.deckgl.redraw(true); } catch(e){} } }, 400);
+        setTimeout(function() { sheetDidDrag = false; }, 200); 
+      }
+    });
+  }
+
+  // ── Position tap info bar just above the sheet ─────────────────────
+  function updateTapInfoPosition() {
+    if (!isMobile() || !tapInfo) return;
+    var panelH = sheetCollapsed ? 68 : Math.min(panel.getBoundingClientRect().height || 220, window.innerHeight * 0.52);
+    tapInfo.style.bottom = (panelH + 10) + 'px';
+  }
+
+  // ── Show tap info on mobile when a region is clicked/tapped ──────────
+  window.showMobileTapInfo = function(regionName, parentName, pct, color, detailsHtml, bgClass) {
+    if (!isMobile()) return;
+    
+    var mdi = document.getElementById('mobile-details-injection');
+    if (mdi) {
+      mdi.classList.remove('hidden');
+      document.getElementById('mdi-region').textContent = regionName || '—';
+      document.getElementById('mdi-parent').textContent = parentName || '';
+      
+      var sc = document.getElementById('mdi-score');
+      sc.textContent = pct != null ? pct.toFixed(1) + '%' : '—';
+      
+      sc.className = 'text-[11px] font-mono font-bold px-2 py-0.5 rounded whitespace-nowrap shadow-sm ';
+      if (bgClass === 'bg-emerald-50') sc.className += 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+      else if (bgClass === 'bg-amber-50') sc.className += 'bg-amber-50 text-amber-700 border border-amber-200';
+      else sc.className += 'bg-gray-50 text-gray-500 border border-gray-200';
+      
+      document.getElementById('mdi-body').innerHTML = detailsHtml || '';
+
+      // Auto-expand sheet if it's collapsed so user sees the new data
+      if (sheetCollapsed && window.toggleSheet) {
+        window.toggleSheet();
+      }
+    }
+  };
+
+  // ── On startup: collapse panel & adjust ───────────────────────────
+  function initMobileLayout() {
+    if (!isMobile()) return;
+    // Start collapsed so map is visible
+    if (panel) {
+      sheetCollapsed = true;
+      panel.classList.add('sheet-collapsed');
+    }
+    updateTapInfoPosition();
+  }
+
+  // ── On resize: re-evaluate ────────────────────────────────────────
+  window.addEventListener('resize', function() {
+    if (isMobile()) {
+      initMobileLayout();
+    } else {
+      // Desktop: remove mobile overrides
+      if (panel) panel.classList.remove('sheet-collapsed');
+    }
+  });
+
+  // Init after a short delay (so panel has rendered height)
+  setTimeout(initMobileLayout, 50);
+})();
+</script>
 
 </body>
 </html>

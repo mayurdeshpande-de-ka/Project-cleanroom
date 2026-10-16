@@ -17,11 +17,13 @@
 
   <style>
     *, *::before, *::after { box-sizing: border-box; }
-    html { height: 100%; }
+    html { height: 100%; max-width: 100%; overflow-x: hidden; }
     body {
       font-family: 'Inter', system-ui, sans-serif;
       background: #f5f5f5;
       color: #111827;
+      max-width: 100%;
+      overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
       margin: 0; padding: 0;
       /* Page scrolls naturally — only the body itself is the scroll container */
@@ -33,6 +35,8 @@
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
       font-size: 18px; vertical-align: middle; line-height: 1;
     }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
     /* ── Exact nav-tab from index.html ── */
         .nav-tab {
@@ -112,8 +116,19 @@
 
     /* ── Dense Enterprise Table ── */
     table.glance-tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
+    table.glance-tbl thead tr:nth-child(1) th {
+      position: sticky;
+      top: 0;
+      height: 42px;
+      z-index: 12;
+    }
+    table.glance-tbl thead tr:nth-child(2) th {
+      position: sticky;
+      top: 42px;
+      z-index: 11;
+    }
     table.glance-tbl th {
-      background: rgba(248,250,252,0.94);
+      background: #f8fafc;
       color: #52525b;
       font-size: 0.67rem;
       font-weight: 700;
@@ -122,9 +137,6 @@
       padding: 11px 10px;
       border-bottom: 1px solid rgba(0,0,0,0.07);
       border-right: 1px solid rgba(0,0,0,0.04);
-      position: sticky;
-      top: 0;
-      z-index: 10;
       white-space: nowrap;
     }
     table.glance-tbl td {
@@ -137,7 +149,7 @@
     }
     table.glance-tbl th:last-child,
     table.glance-tbl td:last-child { border-right: none; }
-    table.glance-tbl tr:hover td { background: rgba(0,0,0,0.016) !important; }
+    
     table.glance-tbl tbody tr:last-child td { border-bottom: none; }
 
     /* ── Status Dots ── */
@@ -277,10 +289,10 @@
 
 </head>
 
-<body>
+<body class="flex flex-col min-h-screen overflow-x-hidden bg-slate-50">
 
 <!-- Fixed background blobs -->
-<div aria-hidden="true">
+<div aria-hidden="true" class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
   <div class="blob blob-1 w-[420px] h-[420px] opacity-[0.28]" style="background:#e0e7ff;top:0;left:-5%;"></div>
   <div class="blob blob-2 w-[320px] h-[320px] opacity-[0.22]" style="background:#fce7f3;top:30%;right:-8%;"></div>
   <div class="blob blob-3 w-[500px] h-[500px] opacity-[0.18]" style="background:#dcfce7;bottom:-10%;left:20%;"></div>
@@ -289,48 +301,44 @@
 <!-- ═══════════════════════════════════════════
      TOP NAVIGATION — exact match to index.html
 ═══════════════════════════════════════════ -->
-<nav class="fixed top-0 left-0 w-full z-50 h-[56px] bg-white/75 backdrop-blur-xl border-b border-gray-200/60 flex items-center justify-between px-6 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] transition-all">
-  <div class="flex items-center gap-6 h-full">
+<nav class="fixed top-0 left-0 w-full z-50 h-[56px] bg-white/75 backdrop-blur-xl border-b border-gray-200/60 flex items-center justify-between px-4 md:px-6 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] transition-all gap-2">
+  <div class="flex items-center gap-3 md:gap-6 h-full min-w-0 flex-1">
     <!-- Logo -->
-    <div class="flex items-center gap-2.5 shrink-0">
+    <a href="/country-glance-map" class="flex items-center gap-2 shrink-0 cursor-pointer hover:opacity-80 transition-opacity">
       <div class="w-7 h-7 rounded-[8px] bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center shadow-md shadow-indigo-500/20">
-        <span class="material-symbols-outlined" style="font-size:15px;">ballot</span>
+        <span class="material-symbols-outlined text-white" style="font-size:15px;">ballot</span>
       </div>
-      <span class="text-[14px] font-extrabold text-gray-900 tracking-tight">Project CleanRoom</span>
-    </div>
-
-    <div class="w-px h-5 bg-gray-200 shrink-0 mx-1"></div>
-
+      <span class="text-[13px] md:text-[14px] font-extrabold text-gray-900 tracking-tight whitespace-nowrap">Project CleanRoom</span>
+    </a>
+    <div class="w-px h-5 bg-gray-200 shrink-0 mx-0 md:mx-1"></div>
     <!-- Tabs -->
-    <div class="hidden md:flex items-center h-full gap-1">
-      <a id="nav-dashboard" href="/" class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative ">Dashboard</a>
-      <a id="nav-listing" href="/#listing" class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative ">Backlog Tracker</a>
-      <a id="nav-glance" href="/#glance" class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative ">Weekly Report</a>
-      <a id="nav-retro" href="/#retro" class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative ">Retro Export</a>
-      <a href="/country-glance-report" class="nav-tab active h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-900 cursor-pointer select-none transition-colors relative">Glance Report</a>
+    <div class="flex flex-1 min-w-0 overflow-x-auto whitespace-nowrap hide-scrollbar items-center h-full gap-1 px-1 md:px-0" style="-webkit-overflow-scrolling: touch;">
+      <a href="/country-glance-map" class="nav-tab active h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Glance Report</a>
+      <a id="nav-dashboard" href="/dashboard" class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Dashboard</a>
+      <a id="nav-listing" href="/dashboard#listing" class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Backlog Tracker</a>
+      <a id="nav-glance" href="/dashboard#glance" class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Weekly Report</a>
+      <a id="nav-retro" href="/dashboard#retro" class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Retro Export</a>
     </div>
   </div>
 
   <!-- Right: Profile -->
-  <div class="flex items-center gap-4">
-    <div class="flex items-center gap-3 pr-1">
-      <div class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
-        {% if user and user.picture %}
-          <img src="{{ user.picture }}" alt="Profile" class="w-7 h-7 rounded-full border border-gray-200 shadow-sm">
-        {% else %}
-          <div class="w-7 h-7 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 shadow-sm">
-            <span class="material-symbols-outlined text-indigo-500" style="font-size:15px;">person</span>
-          </div>
-        {% endif %}
-        <span class="text-[12.5px] font-bold text-gray-700 hidden md:block">
-          {{ get_user_display_name(user) }}
-        </span>
-      </div>
-      <div class="w-px h-4 bg-gray-200 shrink-0 mx-1"></div>
-      <a href="/logout" class="h-8 px-3.5 text-[12px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-all flex items-center shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-        Logout
-      </a>
+  <div class="flex items-center gap-1.5 md:gap-3 shrink-0">
+    <div class="hidden sm:flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
+      {% if user and user.picture %}
+        <img src="{{ user.picture }}" alt="Profile" class="w-7 h-7 rounded-full border border-gray-200 shadow-sm">
+      {% else %}
+        <div class="w-7 h-7 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 shadow-sm">
+          <span class="material-symbols-outlined text-indigo-500" style="font-size:15px;">person</span>
+        </div>
+      {% endif %}
+      <span class="text-[12.5px] font-bold text-gray-700 hidden md:block">
+        {{ get_user_display_name(user) }}
+      </span>
     </div>
+    <div class="hidden sm:block w-px h-4 bg-gray-200 shrink-0"></div>
+    <a href="/logout" class="h-8 px-2 md:px-3.5 text-[12px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-all flex items-center shadow-[0_1px_2px_rgba(0,0,0,0.02)] shrink-0">
+      Logout
+    </a>
   </div>
 </nav>
 
@@ -349,17 +357,17 @@
     <div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-7 fade-in">
       
       <!-- Left: Segmented Control -->
-      <div class="flex flex-col gap-2 shrink-0">
+      <div class="flex flex-col gap-2 shrink-0 w-full md:w-auto">
         <p class="text-[9px] font-extrabold text-gray-400 uppercase tracking-[0.1em] ml-1.5">Glance Report Zoom Level</p>
-        <div class="inline-flex bg-slate-100/80 p-1 rounded-[12px] border border-slate-200/50 self-start shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)]">
-          <a href="/country-glance-report" class="flex items-center gap-1.5 px-4 py-1.5 text-[12.5px] font-bold text-white bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-gray-900/10 transition-all duration-200">
-            <span class="material-symbols-outlined text-gray-300" style="font-size:16px;">public</span> Country Data
+        <div class="flex md:inline-flex w-full md:w-auto bg-slate-100/80 p-1 rounded-[12px] border border-slate-200/50 self-start shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)]">
+          <a href="/country-glance-report" class="flex-1 md:flex-none flex justify-center items-center gap-1.5 md:px-4 py-1.5 text-[11.5px] md:text-[12.5px] font-bold text-white bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.15)] ring-1 ring-gray-900/10 transition-all duration-200">
+            <span class="material-symbols-outlined text-gray-300" style="font-size:16px;">public</span> Country<span class="hidden md:inline">&nbsp;Data</span>
           </a>
-          <a href="/country-glance-map" class="flex items-center gap-1.5 px-4 py-1.5 text-[12.5px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-all duration-200">
-            <span class="material-symbols-outlined" style="font-size:16px;">explore</span> Country Map
+          <a href="/country-glance-map" class="flex-1 md:flex-none flex justify-center items-center gap-1.5 md:px-4 py-1.5 text-[11.5px] md:text-[12.5px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-all duration-200">
+            <span class="material-symbols-outlined" style="font-size:16px;">explore</span> <span class="hidden md:inline">Country&nbsp;</span>Map
           </a>
-          <a href="/state-glance-report" class="flex items-center gap-1.5 px-4 py-1.5 text-[12.5px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-all duration-200">
-            <span class="material-symbols-outlined" style="font-size:16px;">flag</span> State Report
+          <a href="/state-glance-report" class="flex-1 md:flex-none flex justify-center items-center gap-1.5 md:px-4 py-1.5 text-[11.5px] md:text-[12.5px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-all duration-200">
+            <span class="material-symbols-outlined" style="font-size:16px;">flag</span> State<span class="hidden md:inline">&nbsp;Report</span>
           </a>
         </div>
       </div>
@@ -438,18 +446,18 @@
     <div class="w-full mx-auto px-6 py-3 flex items-center justify-between flex-wrap gap-3">
 
       <!-- Wide Executive Black Tab Selector -->
-      <div class="tab-switcher-container">
+      <div class="tab-switcher-container max-w-full overflow-x-auto hide-scrollbar" style="-webkit-overflow-scrolling: touch;">
         <button id="tab-eci"
                 onclick="switchTab('eci')"
-                class="btn-tab-active-black px-8 py-2.5 min-w-[175px] rounded-xl text-[13.5px] font-bold transition-all duration-200 flex items-center justify-center gap-2.5 cursor-pointer active:scale-95">
+                class="btn-tab-active-black shrink-0 px-6 md:px-8 py-2.5 min-w-[155px] md:min-w-[175px] rounded-xl text-[13px] md:text-[13.5px] font-bold transition-all duration-200 flex items-center justify-center gap-2 md:gap-2.5 cursor-pointer active:scale-95">
           <span class="material-symbols-outlined" style="font-size:18px;">how_to_vote</span>
-          <span>ECI Primary</span>
+          <span class="whitespace-nowrap">ECI Primary</span>
         </button>
         <button id="tab-other"
                 onclick="switchTab('other')"
-                class="btn-tab-inactive-gray px-8 py-2.5 min-w-[175px] rounded-xl text-[13.5px] font-bold transition-all duration-200 flex items-center justify-center gap-2.5 cursor-pointer active:scale-95">
+                class="btn-tab-inactive-gray shrink-0 px-6 md:px-8 py-2.5 min-w-[155px] md:min-w-[175px] rounded-xl text-[13px] md:text-[13.5px] font-bold transition-all duration-200 flex items-center justify-center gap-2 md:gap-2.5 cursor-pointer active:scale-95">
           <span class="material-symbols-outlined" style="font-size:18px;">dataset</span>
-          <span>Auxiliary Sources</span>
+          <span class="whitespace-nowrap">Auxiliary Sources</span>
         </button>
       </div>
 
@@ -758,12 +766,12 @@
     </div>
   </div>
 
-  <div id="table-wrap" class="hidden overflow-x-auto" style="max-height: calc(100vh - 260px);">
+  <div id="table-wrap" class="hidden overflow-x-auto min-w-0 w-full" style="max-height: calc(100vh - 260px);">
         <table class="glance-tbl" id="glanceTable">
           <thead>
             <tr>
-              <th rowspan="2" class="w-10 text-center sticky left-0 z-20 bg-[#f8fafc] shadow-[1px_0_0_rgba(0,0,0,0.05)]">#</th>
-              <th rowspan="2" class="w-60 text-left cursor-pointer sticky left-[40px] z-20 bg-[#f8fafc] shadow-[1px_0_0_rgba(0,0,0,0.05)]" onclick="sortTable('state_name')">
+              <th rowspan="2" class="text-center sticky left-0 bg-[#f8fafc] shadow-[1px_0_0_rgba(0,0,0,0.05)]" style="z-index: 20 !important; width: 40px; min-width: 40px; max-width: 40px; box-sizing: border-box;">#</th>
+              <th rowspan="2" class="w-60 text-left cursor-pointer sticky left-[39px] bg-[#f8fafc] shadow-[1px_0_0_rgba(0,0,0,0.05)]" style="z-index: 20 !important;" onclick="sortTable('state_name')">
                 State / UT <span class="text-[10px] text-gray-300 ml-0.5">↕</span>
               </th>
               <!-- ECI group header -->
@@ -794,14 +802,7 @@
       </div>
 
       <!-- Footer row -->
-      <div id="table-footer" class="hidden border-t border-gray-200/60 bg-white/70 px-6 py-3 flex items-center justify-between flex-wrap gap-2 text-[11.5px] text-gray-500">
-        <span>Showing <strong id="visible-count" class="text-gray-800">—</strong> of 36 States / UTs</span>
-        <div class="flex items-center gap-1.5 text-[11px] text-amber-800 bg-amber-50 px-3 py-1 rounded-lg border border-amber-200/70 font-medium">
-          <span class="font-bold">* Note for J&K:</span> Coverage is set to 100% (adjusted for election seats increase from 87 to 90 seats in 2022).
-        </div>
-        <div class="flex items-center gap-1.5 text-[11px] text-indigo-800 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200/70 font-medium">
-          <span class="font-bold">* Note for DN/DD:</span> Dadra & Nagar Haveli and Daman & Diu merged in 2020. Pre-2020 historical metrics are aggregated for continuity.
-        </div>
+      <div id="table-footer" class="hidden border-t border-gray-200/60 bg-white/70 px-6 py-3 flex items-center justify-end flex-wrap gap-2 text-[11.5px] text-gray-500">
         <span class="flex items-center gap-1.5">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
           Live from AWS RDS
@@ -842,7 +843,9 @@
     document.getElementById('table-footer').classList.add('hidden');
 
     try {
-      const res  = await fetch(forceRefresh ? '/api/country_glance_test/data?refresh=1' : '/api/country_glance_test/data');
+      const timestamp = new Date().getTime();
+      const url = forceRefresh ? `/api/country_glance_test/data?refresh=1&t=${timestamp}` : `/api/country_glance_test/data?t=${timestamp}`;
+      const res  = await fetch(url);
       const json = await res.json();
 
       if (json.matrix && json.matrix.length > 0) {
@@ -965,20 +968,20 @@
         ? (sortAsc ? va.localeCompare(vb) : vb.localeCompare(va))
         : (sortAsc ? va - vb : vb - va);
     });
-
-    document.getElementById('visible-count').textContent = rows.length;
+    const visibleCountEl = document.getElementById('visible-count');
+    if (visibleCountEl) visibleCountEl.textContent = rows.length;
 
     const h = (col) => activeFilter.cols.includes(col) ? 'bg-indigo-50/70 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.2)]' : '';
 
     rows.forEach((row, idx) => {
       const tr = document.createElement('tr');
-      tr.className = "hover:bg-gray-50 transition-colors";
+      tr.className = "";
       const stateLabel = row.state_abb === 'JK'
         ? `${row.state_name} <span class="text-amber-600 font-bold ml-0.5" title="Capped at 100% (adjusted for election seats increase from 87 to 90 seats in 2022)">*</span>`
         : row.state_name;
       tr.innerHTML = `
-        <td class="text-center text-gray-400 font-medium text-xs bg-[#f8fafc] sticky left-0 z-[5] shadow-[1px_0_0_rgba(0,0,0,0.05)]">${idx+1}</td>
-        <td class="font-semibold text-gray-800 text-[12.5px] bg-[#f8fafc] sticky left-[40px] z-[5] shadow-[1px_0_0_rgba(0,0,0,0.05)] pr-4">${stateLabel}</td>
+        <td class="text-center text-gray-400 font-medium text-xs bg-[#f8fafc] sticky left-0 z-[5] shadow-[1px_0_0_rgba(0,0,0,0.05)]" style="width: 40px; min-width: 40px; max-width: 40px; box-sizing: border-box;">${idx+1}</td>
+        <td class="font-semibold text-gray-800 text-[12.5px] bg-[#f8fafc] sticky left-[39px] z-[5] shadow-[1px_0_0_rgba(0,0,0,0.05)] pr-4">${stateLabel}</td>
         <td class="text-center eci-col ${h('retro')}">${getDotHTML(row.retro)}</td>
         <td class="text-center eci-col ${h('form20')}">${getDotHTML(row.form20)}</td>
         <td class="text-center eci-col ${h('caste')}">${getDotHTML(row.caste)}</td>

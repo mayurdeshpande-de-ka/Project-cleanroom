@@ -337,17 +337,17 @@ STATE_TO_ECI = {
 
 # Canonical state/UT display names — single source of truth for the Listing page,
 # so a state never appears under two labels (full name vs abbreviation vs NULL).
-# CG and CT are both Chhattisgarh; DD = Daman & Diu, DN = Dadra & Nagar Haveli.
+# CG and CH both map to Chandigarh; CT is Chhattisgarh; DD = Daman & Diu, DN = Dadra & Nagar Haveli.
 STATE_NAMES = {
     'AP': 'Andhra Pradesh', 'AR': 'Arunachal Pradesh', 'AS': 'Assam', 'BR': 'Bihar',
-    'CG': 'Chhattisgarh', 'CT': 'Chhattisgarh', 'GA': 'Goa', 'GJ': 'Gujarat',
+    'CH': 'Chandigarh', 'CG': 'Chandigarh', 'CT': 'Chhattisgarh', 'GA': 'Goa', 'GJ': 'Gujarat',
     'HR': 'Haryana', 'HP': 'Himachal Pradesh', 'JH': 'Jharkhand', 'KA': 'Karnataka',
     'KL': 'Kerala', 'MP': 'Madhya Pradesh', 'MH': 'Maharashtra', 'MN': 'Manipur',
     'ML': 'Meghalaya', 'MZ': 'Mizoram', 'NL': 'Nagaland', 'OR': 'Odisha',
     'PB': 'Punjab', 'RJ': 'Rajasthan', 'SK': 'Sikkim', 'TN': 'Tamil Nadu',
     'TR': 'Tripura', 'UP': 'Uttar Pradesh', 'UK': 'Uttarakhand', 'WB': 'West Bengal',
     'TS': 'Telangana', 'DL': 'Delhi', 'JK': 'Jammu & Kashmir', 'LA': 'Ladakh',
-    'AN': 'Andaman & Nicobar', 'CH': 'Chandigarh', 'PY': 'Puducherry',
+    'AN': 'Andaman & Nicobar', 'PY': 'Puducherry',
     'LD': 'Lakshadweep', 'DD': 'Daman & Diu', 'DN': 'Dadra & Nagar Haveli',
 }
 
@@ -357,11 +357,12 @@ def canonical_state_name(code):
 
 # Canonical Assembly Constituency (AC) counts per state/UT — mirrors STATE_AC_COUNTS in static/app.js
 STATE_AC_COUNTS = {
-    'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CT': 90,  'GA': 40,
+    'AP': 175, 'AR': 60,  'AS': 126, 'BR': 243, 'CH': 1,   'CG': 1,   'CT': 90,  'GA': 40,
     'GJ': 182, 'HR': 90,  'HP': 68,  'JH': 81,  'KA': 224, 'KL': 140, 'MP': 230,
     'MH': 288, 'MN': 60,  'ML': 60,  'MZ': 40,  'NL': 60,  'OR': 147, 'PB': 117,
     'RJ': 200, 'SK': 32,  'TN': 234, 'TS': 119, 'TR': 60,  'UP': 403, 'UK': 70,
-    'WB': 294, 'DL': 70,  'PY': 30,  'JK': 90,  'LD': 1,   'AN': 1,   'CH': 1,
+    'WB': 294, 'DL': 70,  'PY': 30,  'JK': 90,  'LD': 1,   'AN': 1,   'DD': 1,
+    'DN': 1,   'LA': 2,
 }
 
 # ── Live AWS Caching ────────────────────────────────────────────────────────
@@ -631,7 +632,9 @@ def require_login():
         return
     allowed_routes = ['login_page', 'login', 'auth_callback', 'static', 'admin_ac_pct',
                       'country_glance_test_page', 'country_glance_map_page', 'indexing_visualizer_page',
-                      'api_country_glance_data', 'api_map_district_data']
+                      'api_country_glance_data', 'api_map_district_data', 'api_map_pc_data', 'api_map_ac_data',
+                      'get_backlog_state_metadata', 'get_backlog_state_booths', 'state_glance_report_page',
+                      'api_state_glance_data', 'api_state_glance_booth_voters']
     if request.endpoint not in allowed_routes:
         if not session.get('user'):
             if request.path.startswith('/api/'):
@@ -641,28 +644,37 @@ def require_login():
 @app.route('/login_page')
 def login_page():
     if auth_disabled() or session.get('user'):
-        return redirect(url_for('index'))
+        return redirect(url_for('country_glance_map_page'))
     return render_template('login.html')
 
 @app.route('/login')
 def login():
-    redirect_uri = url_for('auth_callback', _external=True, _scheme='https')
+    redirect_uri = "https://proj-cleanroom.duckdns.org/auth/callback"
     return google.authorize_redirect(redirect_uri)
 
 @app.route('/auth/callback')
 def auth_callback():
-    token = google.authorize_access_token()
+    try:
+        token = google.authorize_access_token()
+    except Exception as e:
+        print(f"OAuth access token error: {e}")
+        # Session state mismatch (refreshed page, stale tab, double click)
+        return redirect(url_for('login_page'))
+        
     user_info = token.get('userinfo')
+    if not user_info:
+        return redirect(url_for('login_page'))
     
-    allowed_domain = os.environ.get('ALLOWED_OAUTH_DOMAIN', '').strip().lower()
-    if allowed_domain:
+    allowed_domains_str = os.environ.get('ALLOWED_OAUTH_DOMAIN', '').strip().lower()
+    if allowed_domains_str:
+        allowed_domains = [d.strip() for d in allowed_domains_str.split(',') if d.strip()]
         user_email = user_info.get('email', '').lower()
-        if not user_email.endswith('@' + allowed_domain):
-            return jsonify({"error": f"Unauthorized domain. Must be an @{allowed_domain} email."}), 403
+        if not any(user_email.endswith('@' + d) for d in allowed_domains):
+            return jsonify({"error": f"Unauthorized domain. Must be an email from one of: {allowed_domains_str}"}), 403
             
     session.permanent = True
     session['user'] = user_info
-    return redirect(url_for('index'))
+    return redirect(url_for('country_glance_map_page'))
 
 @app.route('/logout')
 def logout():
@@ -684,7 +696,7 @@ def inject_user_helpers():
     return dict(get_user_display_name=get_user_display_name)
 
 
-@app.route('/')
+@app.route('/dashboard')
 @login_required
 def index():
     user = session.get('user')
@@ -697,6 +709,7 @@ def country_glance_report_page():
     user = session.get('user')
     return render_template('country_glance_test.html', user=user)
 
+@app.route('/')
 @app.route('/country-glance-map')
 @login_required
 def country_glance_map_page():
@@ -842,6 +855,68 @@ def update_record(record_id):
             save_completion_history(history)
 
     return jsonify(r_dict)
+
+
+@app.route('/api/backlog/state_metadata')
+def get_backlog_state_metadata():
+    """Returns lightweight booth and voter roll metadata for all states to power Backlog Tracker."""
+    cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'data', 'state_glance_cache.json')
+    if not os.path.exists(cache_path):
+        return jsonify({})
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        result = {}
+        for s_abb, data in all_data.items():
+            if s_abb == 'CG' and 'CH' in all_data:
+                continue
+            target_abb = 'CH' if s_abb == 'CG' else s_abb
+            b = data.get('booth') or {}
+            v = data.get('voter') or {}
+            total_acs = STATE_AC_COUNTS.get(target_abb) or b.get('total_acs') or 1
+            rev_bd = b.get('revision_breakdown') or {}
+            result[target_abb] = {
+                'state_abb': target_abb,
+                'state_name': STATE_NAMES.get(target_abb, target_abb),
+                'total_acs': total_acs,
+                'form20_avail': data.get('form20', {}).get('availability_pct', 0),
+                'retro_avail': data.get('hero', {}).get('retro_availability_pct', 0),
+                'total_booths': b.get('total_booths', 0),
+                'pre_sir_booths': rev_bd.get('pre_sir') or b.get('pre_sir_booths', 0),
+                'sir_booths': rev_bd.get('sir') or b.get('sir_booths', 0),
+                'post_sir_booths': rev_bd.get('post_sir') or b.get('post_sir_booths', 0),
+                'revision_stage': rev_bd.get('primary_stage') or b.get('revision_stage', '—'),
+                'sample_revision': rev_bd.get('sample_revision', ''),
+                'avg_booths_per_ac': b.get('avg_booths_per_ac', 0),
+                'admin_quality': b.get('admin_quality_score', 0),
+                'field_completeness': b.get('field_completeness', {}),
+                'total_voters': v.get('total_voters', 0),
+                'gender_ratio': v.get('gender_ratio', 0),
+                'urban_pct': (v.get('urban_rural') or {}).get('urban_pct', 0),
+                'rural_pct': (v.get('urban_rural') or {}).get('rural_pct', 0),
+                'has_booth': bool(b.get('total_booths', 0) > 0),
+                'has_voter': bool(v.get('total_voters', 0) > 0)
+            }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/backlog/state_booths/<state_abb>')
+def get_backlog_state_booths(state_abb):
+    """Returns AC-level booth details with Pre-SIR, SIR, and Post-SIR breakdown for a given state."""
+    state_code = 'CH' if state_abb.upper() == 'CG' else state_abb.upper()
+    cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'data', 'state_glance_cache.json')
+    if not os.path.exists(cache_path):
+        return jsonify([])
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        s_data = all_data.get(state_code, {})
+        booth_details = s_data.get('booth', {}).get('booth_details', [])
+        return jsonify(booth_details)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/stats')
@@ -1581,8 +1656,8 @@ def dashboard_analytics():
     payload = {
         'retro': {
             'available': True,
-            'total_acs': 2100,
-            'available_acs': 2063,
+            'total_acs': 4120,
+            'available_acs': int(4120 * (retro_pct / 100.0)),
             'coverage_pct_acs': retro_pct,
             'by_type_acs': [{'type': 'AE', 'total': 113, 'available': int(113 * (retro_pct / 100.0))}, {'type': 'GE', 'total': 148, 'available': int(148 * (retro_pct / 100.0))}],
             'top_states_acs': [{'state': r['state'], 'expected': 100, 'available': int(r['pct']), 'pct': r['pct']} for r in retro_progress[:10]],
@@ -1591,7 +1666,7 @@ def dashboard_analytics():
         'booth': {
             'available': True,
             'states': len(matrix),
-            'acs_with_data': 2450,
+            'acs_with_data': int(4120 * (booth_pct / 100.0)),
             'total_acs_all': 4120,
             'coverage_pct_all': booth_pct,
             'top_states': [{'state': r['state'], 'acs': int(r['pct']*41.2)} for r in booth_progress[:10]],
@@ -1601,7 +1676,7 @@ def dashboard_analytics():
             'available': True,
             'states': len(matrix),
             'categories': 4,
-            'acs_with_data': 2784,
+            'acs_with_data': int(4120 * (caste_pct / 100.0)),
             'total_acs_all': 4120,
             'coverage_pct_all': caste_pct,
             'top_states': [{'state': r['state'], 'acs': int(r['pct']*41.2)} for r in caste_progress[:10]],
@@ -1667,8 +1742,15 @@ def form20_card_stats():
     total_form20_elections  = len(form20_set)   # total elections in form20
     total_acpc_elections    = len(acpc_set)     # total elections expected
 
-    # National coverage — keep 2 decimal places, NO rounding to integer
+    # National coverage — originally election-level
     coverage_pct = round(total_form20_elections / total_acpc_elections * 100, 2) if total_acpc_elections else 0.0
+
+    # User Request: Make dashboard match glance report AC-level calculation
+    glance_data = cache_get('country_glance_data')
+    if glance_data and isinstance(glance_data, dict):
+        glance_f20 = glance_data.get('national_avg', {}).get('form20')
+        if glance_f20 is not None:
+            coverage_pct = glance_f20
 
     # Distinct years (non-BP)
     years_form20   = sorted(set(int(y) for _, _, y in form20_set))
@@ -1697,10 +1779,17 @@ def form20_card_stats():
         avail = form20_by_state.get(state, 0)
         state_pcts[state] = round(avail / exp * 100, 2) if exp else 0.0
 
-    top_states = [
-        {'state': s, 'count': form20_by_state.get(s, 0), 'pct': state_pcts.get(s, 0)}
-        for s in sorted(acpc_by_state, key=lambda s: form20_by_state.get(s, 0), reverse=True)[:10]
-    ]
+    # Top 12 states with least coverage (most missing elections)
+    top_states = []
+    for s in sorted(acpc_by_state, key=lambda s: acpc_by_state[s] - form20_by_state.get(s, 0), reverse=True)[:12]:
+        missing_years = acpc_by_state[s] - form20_by_state.get(s, 0)
+        top_states.append({
+            'state': s,
+            'total': acpc_by_state[s],
+            'completed': form20_by_state.get(s, 0),
+            'missing_years': missing_years,
+            'pct': state_pcts.get(s, 0)
+        })
 
     # ── Missing elections ──────────────────────────────────────────────────────
     missing_elections = total_acpc_elections - total_form20_elections
@@ -1737,15 +1826,16 @@ def get_filters():
         s_name = r['state_name']
         t = r['el_type']
         y = r['el_year']
-        
-        state_names[s] = s_name
-        
+
+        # Always prefer the canonical full name from STATE_NAMES, falling back to DB value
+        state_names[s] = STATE_NAMES.get(s, s_name) if s else s_name
+
         if s not in metadata:
             metadata[s] = {}
         if t not in metadata[s]:
             metadata[s][t] = {}
         metadata[s][t][y] = r['cnt']
-        
+
     return jsonify({
         'metadata': metadata,
         'state_names': state_names
@@ -2400,23 +2490,23 @@ def state_glance_report_page():
 
 @app.route('/api/state_glance/data')
 def api_state_glance_data():
-    state_abb = request.args.get('state_abb', 'BR').upper().strip()
+    state_abb = (request.args.get('state_abb') or request.args.get('state') or 'MH').upper().strip()
+    if state_abb == 'CG':
+        state_abb = 'CH'
     
     import os, json, redis
     
     # 1. Try Redis First
     try:
-        REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
-        REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
-        redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True, socket_connect_timeout=2)
-        
-        cached_data = redis_client.get(f'state_glance:{state_abb}')
-        if cached_data:
-            return jsonify({
-                "success": True,
-                "data": json.loads(cached_data),
-                "source": "redis"
-            })
+        redis_client = get_redis()
+        if redis_client:
+            cached_data = redis_client.get(f'state_glance:{state_abb}')
+            if cached_data:
+                return jsonify({
+                    "success": True,
+                    "data": json.loads(cached_data),
+                    "source": "redis"
+                })
     except Exception as e:
         print(f"Redis fetch failed for {state_abb}, falling back to JSON: {e}")
         
@@ -2442,6 +2532,80 @@ def api_state_glance_data():
         "data": None,
         "source": "none"
     })
+
+@app.route('/api/state_glance/booth_voters')
+def api_state_glance_booth_voters():
+    state_abb = (request.args.get('state_abb') or request.args.get('state') or 'MH').upper().strip()
+    if state_abb == 'CG':
+        state_abb = 'CH'
+    ac_no = request.args.get('ac_no')
+    limit = int(request.args.get('limit', 100))
+    
+    conn = get_rds_db()
+    if not conn:
+        return jsonify({"success": False, "data": []})
+        
+    try:
+        cur = conn.cursor()
+        if ac_no:
+            q = """
+            SELECT 
+                b.state_abb, b.ac_no, COALESCE(a.ac_name, CONCAT('AC-', b.ac_no)) AS ac_name,
+                b.booth_no, b.booth_name, b.total_voters, b.male_voters, b.female_voters,
+                b.police_station, b.pincode
+            FROM booth_metadata_full_view b
+            LEFT JOIN ac_mapping a ON b.state_abb = a.state_abb AND b.ac_no = a.ac_no
+            WHERE b.state_abb = %s AND b.ac_no = %s
+            ORDER BY b.el_booth_id
+            LIMIT %s;
+            """
+            cur.execute(q, (state_abb, int(ac_no), limit))
+        else:
+            q = """
+            SELECT 
+                b.state_abb, b.ac_no, COALESCE(a.ac_name, CONCAT('AC-', b.ac_no)) AS ac_name,
+                b.booth_no, b.booth_name, b.total_voters, b.male_voters, b.female_voters,
+                b.police_station, b.pincode
+            FROM booth_metadata_full_view b
+            LEFT JOIN ac_mapping a ON b.state_abb = a.state_abb AND b.ac_no = a.ac_no
+            WHERE b.state_abb = %s
+            ORDER BY b.el_booth_id
+            LIMIT %s;
+            """
+            cur.execute(q, (state_abb, limit))
+            
+        rows = cur.fetchall()
+        data = []
+        for r in rows:
+            s_abb, ac_n, ac_nm, b_no, b_nm, tot_v, m_v, f_v, ps, pin = r
+            tot_v = tot_v or 0
+            m_v = m_v or 0
+            f_v = f_v or 0
+            ratio = round((f_v / max(m_v, 1)) * 1000) if m_v > 0 else 0
+            
+            data.append({
+                'state': s_abb,
+                'ac_no': ac_n,
+                'ac_name': ac_nm,
+                'booth_no': b_no,
+                'booth_name': b_nm or f"Booth {b_no}",
+                'total_voters': tot_v,
+                'voters_with_valid_location': None,
+                'age_distribution': None,
+                'gender_distribution': {
+                    'male': m_v, 'female': f_v, 'ratio': ratio
+                },
+                'total_voter_coordinates': None,
+                'unique_voter_coordinates': None,
+                'valid_voter_coordinates': None,
+                'valid_voter_coordinates_pct': None
+            })
+        conn.close()
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        if conn: conn.close()
+        return jsonify({"success": False, "error": str(e), "data": []})
+
 
 @app.route('/api/country_glance_report/data')
 @app.route('/api/country_glance_test/data', endpoint='api_country_glance_test_data')
@@ -2513,6 +2677,10 @@ def api_map_district_data():
     
     cache_key = f'map_district_data_{metric}'
     cached_data = cache_get(cache_key)
+    if not cached_data:
+        _build_pc_ac_caches(force_refresh=False)
+        cached_data = cache_get(cache_key)
+
     if cached_data:
         return jsonify({
             "success": True,
@@ -2529,6 +2697,10 @@ def api_map_pc_data():
     metric = request.args.get('metric', 'retro').lower().strip()
     cache_key = f'map_pc_data_{metric}'
     cached_data = cache_get(cache_key)
+    if not cached_data:
+        _build_pc_ac_caches(force_refresh=False)
+        cached_data = cache_get(cache_key)
+
     if cached_data is not None:
         return jsonify({
             "success": True, "metric": metric, "level": "pc",
@@ -2541,6 +2713,10 @@ def api_map_ac_data():
     metric = request.args.get('metric', 'retro').lower().strip()
     cache_key = f'map_ac_data_{metric}'
     cached_data = cache_get(cache_key)
+    if not cached_data:
+        _build_pc_ac_caches(force_refresh=False)
+        cached_data = cache_get(cache_key)
+
     if cached_data is not None:
         return jsonify({
             "success": True, "metric": metric, "level": "ac",
@@ -2617,18 +2793,9 @@ def _build_pc_ac_caches(force_refresh=False):
     try:
         cur = conn.cursor()
         for metric in ['retro', 'form20', 'caste', 'booth']:
-            if metric == 'retro':
-                retro_meta = cache_get('retro') or {}
-                avail_tuples = []
-                for st, types in retro_meta.items():
-                    for ty, years in (types or {}).items():
-                        if '-BP' in str(ty): continue
-                        for yr in (years or {}):
-                            avail_tuples.append(f"('{str(st).strip()}', '{str(ty).strip()}', {str(yr).strip()})")
-                avail_in = ", ".join(avail_tuples) if avail_tuples else "('', '', 0)"
             cov_query = ""
             tot_query = ""
-            
+
             if metric == 'retro':
                 retro_meta = cache_get('retro') or {}
                 avail_tuples = []
@@ -2656,45 +2823,51 @@ def _build_pc_ac_caches(force_refresh=False):
             elif metric == 'booth':
                 cov_query = "SELECT state_abb, ac_no, 1 as cnt FROM booth_metadata_full_view GROUP BY state_abb, ac_no"
                 tot_query = "SELECT state_abb, ac_no, 1 as cnt FROM ac_mapping GROUP BY state_abb, ac_no"
-                
+
             cur.execute(cov_query)
             cov_dict = {f"{r[0]}|{r[1]}": r[2] for r in cur.fetchall()}
-            
+
             cur.execute(tot_query)
             tot_dict = {f"{r[0]}|{r[1]}": r[2] for r in cur.fetchall()}
-            
+
             mapping_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'data', 'ac_pc_mapping.json')
             import json
             with open(mapping_file, 'r', encoding='utf-8') as f:
                 ac_pc_map = json.load(f)
-                
+
             pc_agg = {}
             ac_data = []
-            
+
             for ac_key, ac_info in ac_pc_map['acs'].items():
                 st, ac_no = ac_key.split('|')
                 covered = int(cov_dict.get(ac_key, 0))
                 total = int(tot_dict.get(ac_key, 1))
-                
+
                 ac_data.append({
                     "state_abb": st, "state_name": STATE_NAMES.get(st, st),
                     "ac_no": ac_no, "ac_name": ac_info['ac_name'],
                     "covered": covered, "total": total,
                     "pct": round((covered / total) * 100, 2) if total > 0 else 0
                 })
-                
+
                 pc_id = ac_info['pc_id']
                 if pc_id not in pc_agg:
-                    pc_agg[pc_id] = {'covered': 0, 'total': 0}
+                    pc_agg[pc_id] = {'covered': 0, 'total': 0, 'ac_count': 0}
                 pc_agg[pc_id]['covered'] += covered
                 pc_agg[pc_id]['total'] += total
-                
+                pc_agg[pc_id]['ac_count'] += 1
+
             pc_data = []
             for pc_id, counts in pc_agg.items():
                 if pc_id in ac_pc_map['pcs']:
                     pc_info = ac_pc_map['pcs'][pc_id]
                     covered = counts['covered']
                     total = counts['total']
+                    
+                    if metric in ['retro', 'form20'] and counts['ac_count'] > 0:
+                        covered = int(round(covered / counts['ac_count']))
+                        total   = int(round(total   / counts['ac_count']))
+
                     st = pc_info['state_abb']
                     pc_data.append({
                         "state_abb": st, "state_name": STATE_NAMES.get(st, st),
@@ -2702,9 +2875,10 @@ def _build_pc_ac_caches(force_refresh=False):
                         "covered": covered, "total": total,
                         "pct": round((covered / total) * 100, 2) if total > 0 else 0
                     })
-                    
+
             cache_set(f'map_pc_data_{metric}', pc_data)
             cache_set(f'map_ac_data_{metric}', ac_data)
+
 
         # BUILD DISTRICT MAP CACHES
         for metric in ['ejal', 'joshua', 'muslim', 'secc', 'kys', 'lgd']:

@@ -42,6 +42,8 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
     /* ── Nav tabs ── */
         .nav-tab {
@@ -235,48 +237,44 @@
 <!-- ═══════════════════════════════════
      TOP NAVIGATION  48px
 ═══════════════════════════════════ -->
-<nav class="fixed top-0 left-0 w-full z-50 h-[56px] bg-white/75 backdrop-blur-xl border-b border-gray-200/60 flex items-center justify-between px-6 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] transition-all">
-  <div class="flex items-center gap-6 h-full">
+<nav class="fixed top-0 left-0 w-full z-50 h-[56px] bg-white/75 backdrop-blur-xl border-b border-gray-200/60 flex items-center justify-between px-4 md:px-6 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] transition-all gap-2">
+  <div class="flex items-center gap-3 md:gap-6 h-full min-w-0 flex-1">
     <!-- Logo -->
-    <div class="flex items-center gap-2.5 shrink-0">
+    <a href="/country-glance-map" class="flex items-center gap-2 shrink-0 cursor-pointer hover:opacity-80 transition-opacity">
       <div class="w-7 h-7 rounded-[8px] bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center shadow-md shadow-indigo-500/20">
         <span class="material-symbols-outlined text-white" style="font-size:15px;">ballot</span>
       </div>
-      <span class="text-[14px] font-extrabold text-gray-900 tracking-tight">Project CleanRoom</span>
-    </div>
-
-    <div class="w-px h-5 bg-gray-200 shrink-0 mx-1"></div>
-
+      <span class="text-[13px] md:text-[14px] font-extrabold text-gray-900 tracking-tight whitespace-nowrap">Project CleanRoom</span>
+    </a>
+    <div class="w-px h-5 bg-gray-200 shrink-0 mx-0 md:mx-1"></div>
     <!-- Tabs -->
-    <div class="hidden md:flex items-center h-full gap-1">
-      <a id="nav-dashboard" href="/" class="nav-tab active h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-900 cursor-pointer select-none transition-colors relative ">Dashboard</a>
-      <a id="nav-listing" href="/#listing" class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative ">Backlog Tracker</a>
-      <a id="nav-glance" href="/#glance" class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative ">Weekly Report</a>
-      <a id="nav-retro" href="/#retro" class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative ">Retro Export</a>
-      <a href="/country-glance-report" class="nav-tab h-full px-3.5 flex items-center text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative ">Glance Report</a>
+    <div class="flex flex-1 min-w-0 overflow-x-auto whitespace-nowrap hide-scrollbar items-center h-full gap-1 px-1 md:px-0" style="-webkit-overflow-scrolling: touch;">
+      <a href="/country-glance-map" class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Glance Report</a>
+      <a id="nav-dashboard" href="/dashboard" class="nav-tab active h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Dashboard</a>
+      <a id="nav-listing" href="/dashboard#listing" class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Backlog Tracker</a>
+      <a id="nav-glance" href="/dashboard#glance" class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Weekly Report</a>
+      <a id="nav-retro" href="/dashboard#retro" class="nav-tab h-full px-2 md:px-3.5 flex items-center text-[12px] md:text-[13px] font-semibold text-gray-500 hover:text-gray-900 cursor-pointer select-none transition-colors relative shrink-0">Retro Export</a>
     </div>
   </div>
 
   <!-- Right: Profile -->
-  <div class="flex items-center gap-4">
-    <div class="flex items-center gap-3 pr-1">
-      <div class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
-        {% if user and user.picture %}
-          <img src="{{ user.picture }}" alt="Profile" class="w-7 h-7 rounded-full border border-gray-200 shadow-sm">
-        {% else %}
-          <div class="w-7 h-7 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 shadow-sm">
-            <span class="material-symbols-outlined text-indigo-500" style="font-size:15px;">person</span>
-          </div>
-        {% endif %}
-        <span class="text-[12.5px] font-bold text-gray-700 hidden md:block">
-          {{ get_user_display_name(user) }}
-        </span>
-      </div>
-      <div class="w-px h-4 bg-gray-200 shrink-0 mx-1"></div>
-      <a href="/logout" class="h-8 px-3.5 text-[12px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-all flex items-center shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-        Logout
-      </a>
+  <div class="flex items-center gap-1.5 md:gap-3 shrink-0">
+    <div class="hidden sm:flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
+      {% if user and user.picture %}
+        <img src="{{ user.picture }}" alt="Profile" class="w-7 h-7 rounded-full border border-gray-200 shadow-sm">
+      {% else %}
+        <div class="w-7 h-7 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 shadow-sm">
+          <span class="material-symbols-outlined text-indigo-500" style="font-size:15px;">person</span>
+        </div>
+      {% endif %}
+      <span class="text-[12.5px] font-bold text-gray-700 hidden md:block">
+        {{ get_user_display_name(user) }}
+      </span>
     </div>
+    <div class="hidden sm:block w-px h-4 bg-gray-200 shrink-0"></div>
+    <a href="/logout" class="h-8 px-2 md:px-3.5 text-[12px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-all flex items-center shadow-[0_1px_2px_rgba(0,0,0,0.02)] shrink-0">
+      Logout
+    </a>
   </div>
 </nav>
 
@@ -295,18 +293,32 @@
     <!-- ══════════════════════════════════════════
          LISTING VIEW
     ══════════════════════════════════════════ -->
-    <div id="listing-view" class="hidden flex-col h-full w-full">
+    <div id="listing-view" class="hidden h-full w-full flex-col overflow-y-auto md:overflow-hidden custom-scrollbar">
 
       <!-- Header Bar -->
-      <div class="h-[50px] bg-white border-b border-gray-200 flex items-center justify-between px-5 sticky top-0 z-30 shrink-0">
-        <div class="flex items-center gap-3">
-          <h1 class="text-[13px] font-semibold text-gray-900">Remaining Elections</h1>
+      <div class="py-3 min-h-[50px] bg-white border-b border-gray-200 flex flex-col items-start md:flex-row md:items-center justify-between px-5 gap-3 sticky top-0 z-30 shrink-0">
+        <div class="flex items-center gap-2.5 sm:gap-3.5 flex-wrap">
+          <!-- Backlog Mode Segmented Control -->
+          <div class="flex items-center bg-gray-100/90 p-0.5 rounded-lg border border-gray-200/90 shrink-0">
+            <button id="toggle-view-backlog" type="button" onclick="switchListingMode('backlog')"
+              class="px-2.5 py-1 text-[11.5px] font-bold rounded-md transition-all shadow-sm bg-white text-gray-900 flex items-center gap-1.5 select-none cursor-pointer">
+              <span class="material-symbols-outlined text-indigo-600" style="font-size:14px;">pending_actions</span>
+              <span>Form 20 Backlog</span>
+            </button>
+            <button id="toggle-view-directory" type="button" onclick="switchListingMode('directory')"
+              class="px-2.5 py-1 text-[11.5px] font-bold rounded-md transition-all text-gray-500 hover:text-gray-900 flex items-center gap-1.5 select-none cursor-pointer">
+              <span class="material-symbols-outlined text-purple-600" style="font-size:14px;">pin_drop</span>
+              <span>Booth &amp; Voter Directory</span>
+              <span class="text-[9.5px] font-extrabold px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-700">37</span>
+            </button>
+          </div>
+
           <span class="text-[11px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md tabular-nums" id="record-count-badge">— records</span>
 
-          <div class="w-px h-4 bg-gray-200 mx-2 hidden sm:block"></div>
+          <div class="w-px h-4 bg-gray-200 mx-1 hidden sm:block"></div>
           <div id="global-search-wrap" class="relative hidden sm:block">
             <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" style="font-size:14px;">search</span>
-            <input id="global-search" type="text" placeholder="Search records…"
+            <input id="global-search" type="text" placeholder="Search states or records…"
               class="h-7 w-56 bg-gray-50 border border-gray-200 rounded-md pl-8 pr-3 text-[12px] text-gray-700 placeholder-gray-400 outline-none focus:border-gray-400 focus:bg-white transition-all"/>
           </div>
         </div>
@@ -333,96 +345,250 @@
         </div>
       </div>
 
-      <!-- Pipeline Stage KPI Cards -->
-      <div class="px-5 py-3 bg-white border-b border-gray-200 grid grid-cols-2 md:grid-cols-5 gap-3 shrink-0">
-        <a data-view="all" class="sidelink sl-active kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
-          <div class="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-            <span class="material-symbols-outlined text-gray-500" style="font-size:18px;">list_alt</span>
-          </div>
-          <div class="min-w-0">
-            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">All Remaining</p>
-            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-all-count">—</p>
-          </div>
-        </a>
+      <!-- ══════════════════════════════════════════════════
+           MODE 1: Form 20 Pipeline Stage KPI Cards & Progress
+      ══════════════════════════════════════════════════ -->
+      <div id="listing-backlog-container">
+        <!-- Pipeline Stage KPI Cards -->
+        <div class="px-5 py-3 bg-white border-b border-gray-200 grid grid-cols-2 md:grid-cols-5 gap-3 shrink-0">
+          <a data-view="all" class="sidelink sl-active kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+            <div class="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-gray-500" style="font-size:18px;">list_alt</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">All Remaining</p>
+              <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-all-count">—</p>
+            </div>
+          </a>
 
-        <a data-view="missing" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-red-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
-          <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center shrink-0 group-hover:bg-red-100 transition-colors">
-            <span class="material-symbols-outlined text-red-400" style="font-size:18px;">error_outline</span>
-          </div>
-          <div class="min-w-0">
-            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Not Downloaded</p>
-            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-mi-count">—</p>
-          </div>
-        </a>
+          <a data-view="missing" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-red-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+            <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center shrink-0 group-hover:bg-red-100 transition-colors">
+              <span class="material-symbols-outlined text-red-400" style="font-size:18px;">error_outline</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Not Downloaded</p>
+              <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-mi-count">—</p>
+            </div>
+          </a>
 
-        <a data-view="downloaded" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
-          <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
-            <span class="material-symbols-outlined text-blue-500" style="font-size:18px;">download_done</span>
-          </div>
-          <div class="min-w-0">
-            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Downloaded</p>
-            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-dl-count">—</p>
-          </div>
-        </a>
+          <a data-view="downloaded" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+            <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+              <span class="material-symbols-outlined text-blue-500" style="font-size:18px;">download_done</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Downloaded</p>
+              <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-dl-count">—</p>
+            </div>
+          </a>
 
-        <a data-view="extracted" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-violet-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
-          <div class="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition-colors">
-            <span class="material-symbols-outlined text-violet-500" style="font-size:18px;">database</span>
-          </div>
-          <div class="min-w-0">
-            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Extracted</p>
-            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-ex-count">—</p>
-          </div>
-        </a>
+          <a data-view="extracted" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-violet-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+            <div class="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition-colors">
+              <span class="material-symbols-outlined text-violet-500" style="font-size:18px;">database</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Extracted</p>
+              <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-ex-count">—</p>
+            </div>
+          </a>
 
-        <a data-view="wip" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-amber-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
-          <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition-colors">
-            <span class="material-symbols-outlined text-amber-400" style="font-size:18px;">hourglass_top</span>
+          <a data-view="wip" class="sidelink kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-amber-300 hover:shadow-sm transition-all duration-150 bg-white cursor-pointer" href="#">
+            <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition-colors">
+              <span class="material-symbols-outlined text-amber-400" style="font-size:18px;">hourglass_top</span>
+            </div>
+            <div class="min-w-0">
+              <p id="wip-label" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">WIP In Progress</p>
+              <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-wip-count">—</p>
+            </div>
+          </a>
+        </div>
+
+        <!-- Overall Progress strip -->
+        <div class="px-5 py-2.5 bg-white border-b border-gray-100 flex items-center gap-3 shrink-0">
+          <span class="text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider shrink-0">Progress</span>
+          <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden flex">
+            <div id="seg-completed"  class="h-full bg-emerald-500 bar-fill"></div>
+            <div id="seg-extracted"  class="h-full bg-violet-400 bar-fill"></div>
+            <div id="seg-downloaded" class="h-full bg-blue-400 bar-fill"></div>
           </div>
-          <div class="min-w-0">
-            <p id="wip-label" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">WIP In Progress</p>
-            <p class="text-[20px] font-black text-gray-800 leading-tight tabular-nums" id="sl-wip-count">—</p>
-          </div>
-        </a>
+          <span class="text-[12px] font-bold text-gray-900 tabular-nums shrink-0" id="progress-pct-sidebar">0%</span>
+          <span class="text-[10.5px] text-gray-500 tabular-nums shrink-0" id="progress-text">0 / 0 completed</span>
+        </div>
       </div>
 
-      <!-- Overall Progress strip -->
-      <div class="px-5 py-2.5 bg-white border-b border-gray-100 flex items-center gap-3 shrink-0">
-        <span class="text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider shrink-0">Progress</span>
-        <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden flex">
-          <div id="seg-completed"  class="h-full bg-emerald-500 bar-fill"></div>
-          <div id="seg-extracted"  class="h-full bg-violet-400 bar-fill"></div>
-          <div id="seg-downloaded" class="h-full bg-blue-400 bar-fill"></div>
+      <!-- ══════════════════════════════════════════════════
+           MODE 2: Booth & Voter Infrastructure Directory KPIs & Progress
+      ══════════════════════════════════════════════════ -->
+      <div id="listing-directory-container" class="hidden">
+        <!-- Directory Stage KPI Cards: 3-Column Revision Breakdown -->
+        <div class="px-5 py-3 bg-white border-b border-gray-200 grid grid-cols-2 md:grid-cols-5 gap-3 shrink-0">
+          <a id="dir-card-all" onclick="filterDirectory('all')" class="dir-kpi-card group flex items-center gap-3 p-3 rounded-lg border border-indigo-300 bg-indigo-50/30 hover:shadow-sm transition-all cursor-pointer">
+            <div class="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-indigo-600" style="font-size:18px;">map</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">National States</p>
+              <div class="flex items-baseline gap-1.5">
+                <p class="text-[20px] font-black text-gray-900 leading-tight tabular-nums">37</p>
+                <span class="text-[11px] text-gray-500 font-medium">States &amp; UTs</span>
+              </div>
+            </div>
+          </a>
+
+          <a id="dir-card-pre_sir" onclick="filterDirectory('pre_sir')" class="dir-kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-amber-300 hover:shadow-sm transition-all bg-white cursor-pointer">
+            <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition-colors">
+              <span class="material-symbols-outlined text-amber-600" style="font-size:18px;">draft</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pre-SIR Booths</p>
+              <div class="flex items-baseline gap-1.5">
+                <p class="text-[20px] font-black text-amber-700 leading-tight tabular-nums" id="dir-presir-count">4,164</p>
+                <span class="text-[10px] text-amber-600 font-bold">Draft Rolls</span>
+              </div>
+            </div>
+          </a>
+
+          <a id="dir-card-sir" onclick="filterDirectory('sir')" class="dir-kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:shadow-sm transition-all bg-white cursor-pointer">
+            <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0 group-hover:bg-indigo-100 transition-colors">
+              <span class="material-symbols-outlined text-indigo-600" style="font-size:18px;">history_edu</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">SIR Booths</p>
+              <div class="flex items-baseline gap-1.5">
+                <p class="text-[20px] font-black text-indigo-700 leading-tight tabular-nums" id="dir-sir-count">953.5K</p>
+                <span class="text-[10px] text-indigo-600 font-bold">Intensive / SSR</span>
+              </div>
+            </div>
+          </a>
+
+          <a id="dir-card-post_sir" onclick="filterDirectory('post_sir')" class="dir-kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition-all bg-white cursor-pointer">
+            <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0 group-hover:bg-emerald-100 transition-colors">
+              <span class="material-symbols-outlined text-emerald-600" style="font-size:18px;">task_alt</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Post-SIR Booths</p>
+              <div class="flex items-baseline gap-1.5">
+                <p class="text-[20px] font-black text-emerald-700 leading-tight tabular-nums" id="dir-postsir-count">136.8K</p>
+                <span class="text-[10px] text-emerald-600 font-bold">Final Rolls</span>
+              </div>
+            </div>
+          </a>
+
+          <a id="dir-card-missing" onclick="filterDirectory('missing')" class="dir-kpi-card group flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-rose-300 hover:shadow-sm transition-all bg-white cursor-pointer">
+            <div class="w-9 h-9 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 group-hover:bg-gray-100 transition-colors">
+              <span class="material-symbols-outlined text-gray-400" style="font-size:18px;">pending_actions</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pending Backlog</p>
+              <div class="flex items-baseline gap-1.5">
+                <p class="text-[20px] font-black text-gray-600 leading-tight tabular-nums" id="dir-missing-count">14</p>
+                <span class="text-[10px] text-gray-400 font-bold">0 Booths</span>
+              </div>
+            </div>
+          </a>
         </div>
-        <span class="text-[12px] font-bold text-gray-900 tabular-nums shrink-0" id="progress-pct-sidebar">0%</span>
-        <span class="text-[10.5px] text-gray-500 tabular-nums shrink-0" id="progress-text">0 / 0 completed</span>
+
+        <!-- Directory Revision & Coverage Strip -->
+        <div class="px-5 py-2.5 bg-white border-b border-gray-100 flex items-center gap-3 shrink-0">
+          <span class="text-[10.5px] font-semibold text-gray-500 uppercase tracking-wider shrink-0">Revision Breakdown</span>
+          <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden flex">
+            <div id="dir-seg-presir" style="width: 0.4%;" class="h-full bg-amber-400 bar-fill" title="Pre-SIR (Draft): 4,164 booths"></div>
+            <div id="dir-seg-sir" style="width: 87.1%;" class="h-full bg-indigo-600 bar-fill" title="SIR (Intensive / SSR): 953,505 booths"></div>
+            <div id="dir-seg-postsir" style="width: 12.5%;" class="h-full bg-emerald-500 bar-fill" title="Post-SIR (Final): 136,834 booths"></div>
+          </div>
+          <span class="text-[11px] font-bold text-gray-900 tabular-nums shrink-0" id="dir-progress-pct">1,094,503 Booths</span>
+          <span class="text-[10px] text-gray-500 tabular-nums shrink-0" id="dir-progress-text">Pre-SIR: 4.2k • SIR: 953.5k • Post-SIR: 136.8k</span>
+        </div>
       </div>
 
       <!-- Back to States bar (only visible in state detail mode) -->
-      <div id="detail-header" class="hidden h-[40px] bg-gray-50 border-b border-gray-200 flex items-center px-5 shrink-0">
-        <button onclick="goBackToStates()" class="flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
-          <span class="material-symbols-outlined" style="font-size:13px;">arrow_back</span>
-          All States
-        </button>
-        <div class="h-3.5 w-px bg-gray-300 mx-3"></div>
-        <span class="text-[12px] font-semibold text-gray-800 flex items-center gap-1.5">
-          <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">map</span>
-          <span id="detail-state-name">State</span>
-        </span>
+      <div id="detail-header" class="hidden h-[40px] bg-gray-50 border-b border-gray-200 flex items-center justify-between px-5 shrink-0">
+        <div class="flex items-center">
+          <button onclick="goBackToStates()" class="flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
+            <span class="material-symbols-outlined" style="font-size:13px;">arrow_back</span>
+            All States
+          </button>
+          <div class="h-3.5 w-px bg-gray-300 mx-3"></div>
+          <span class="text-[12px] font-semibold text-gray-800 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-gray-400" style="font-size:13px;">map</span>
+            <span id="detail-state-name">State</span>
+          </span>
+        </div>
+        <a id="detail-state-report-btn" href="#" target="_blank" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors">
+          <span>Open Full State Report</span>
+          <span class="material-symbols-outlined" style="font-size:13px;">open_in_new</span>
+        </a>
+      </div>
+
+      <!-- State Booth & Voter Quick Insight Banner -->
+      <div id="detail-state-meta-banner" class="hidden px-5 py-3.5 bg-gradient-to-r from-slate-50 via-indigo-50/20 to-white border-b border-gray-200 shrink-0">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          <!-- Booth Metadata Card -->
+          <div class="p-3 bg-white rounded-xl border border-gray-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-indigo-500" style="font-size:14px;">pin_drop</span>
+                Booth Infrastructure
+              </span>
+              <span id="meta-booth-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">Ready</span>
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span id="meta-total-booths" class="text-[20px] font-black text-gray-900 tabular-nums leading-tight">—</span>
+              <span class="text-[11px] text-gray-500 font-medium">booths mapped</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-gray-500 mt-2 pt-2 border-t border-gray-100">
+              <span id="meta-avg-booths">Avg — / AC</span>
+              <span id="meta-admin-quality" class="font-semibold text-gray-700">Admin: —%</span>
+            </div>
+          </div>
+
+          <!-- Voter Rolls Card -->
+          <div class="p-3 bg-white rounded-xl border border-gray-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-purple-500" style="font-size:14px;">groups</span>
+                Electoral Roll Overview
+              </span>
+              <span id="meta-voter-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100">Verified</span>
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span id="meta-total-voters" class="text-[20px] font-black text-gray-900 tabular-nums leading-tight">—</span>
+              <span class="text-[11px] text-gray-500 font-medium">registered electors</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-gray-500 mt-2 pt-2 border-t border-gray-100">
+              <span id="meta-gender-ratio">Ratio: — F / 1k M</span>
+              <span id="meta-demographic-split" class="font-semibold text-gray-700">—% Urban / —% Rural</span>
+            </div>
+          </div>
+
+          <!-- Deep Analytics Navigation Card -->
+          <div class="p-3 bg-gradient-to-br from-indigo-50/60 to-purple-50/40 rounded-xl border border-indigo-100 flex flex-col justify-between">
+            <div>
+              <p class="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">CleanRoom Intelligence</p>
+              <h4 class="text-[13px] font-bold text-gray-900 mt-0.5">Comprehensive State Analytics</h4>
+              <p class="text-[11px] text-gray-500 mt-1 line-clamp-2">Inspect block/panchayat mapping, caste profiles, and constituency-level turnout in the State Glance Report.</p>
+            </div>
+            <div class="mt-2 pt-2 flex items-center justify-between">
+              <a id="meta-state-report-link" href="#" target="_blank" class="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
+                View Full State Report
+                <span class="material-symbols-outlined" style="font-size:13px;">open_in_new</span>
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Single scroll surface: the table and footer scroll together; only the
            50px toolbar above stays fixed. Table header is sticky. Per-stage counts
            and overall progress live in the sidebar (their single source) — not
            repeated here. -->
-      <div class="flex-1 overflow-auto custom-scrollbar">
+      <div class="flex-1 overflow-visible md:overflow-auto custom-scrollbar">
         <div class="min-h-full flex flex-col">
 
           <!-- Data Table -->
           <table class="w-full text-left border-collapse min-w-[900px]">
             <!-- Header is rendered dynamically by renderTable() for the states /
                  detail views; this static header is only the pre-JS placeholder. -->
-            <thead id="table-head" class="sticky top-0 bg-white border-b border-gray-200 z-20">
+            <thead id="table-head" class="relative md:sticky top-0 bg-white border-b border-gray-200 z-20">
             <tr>
               <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">State</th>
               <th class="px-5 py-3 text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider">Remaining</th>
@@ -528,22 +694,28 @@
         </div>
 
         <!-- ══ analytics grid ══ -->
-        <div class="grid grid-cols-2 gap-4" id="analytics-panels">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" id="analytics-panels">
 
           <!-- ── Form 20 ──────────────────────────────────────────────── -->
           <div class="card card-lift overflow-hidden flex flex-col" id="panel-form20">
 
-            <div class="px-6 pt-5 pb-4 flex items-center justify-between border-b border-gray-100/60 bg-white">
-              <div class="flex items-center gap-3.5">
+            <div class="px-6 pt-5 pb-4 flex flex-wrap items-center justify-between border-b border-gray-100/60 bg-white gap-y-3 gap-x-2">
+              <div class="flex items-center gap-3.5 min-w-0">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-b from-gray-50 to-gray-100 flex items-center justify-center shrink-0 border border-gray-200 shadow-sm shadow-gray-200/50">
                   <span class="material-symbols-outlined text-gray-700" style="font-size:20px;">ballot</span>
                 </div>
-                <div>
-                  <p class="text-[14.5px] font-bold tracking-tight text-gray-900 leading-none mb-1">Form 20</p>
-                  <p class="text-[11px] font-medium text-gray-400">Overall pipeline analytics</p>
+                <div class="min-w-0">
+                  <p class="text-[14.5px] font-bold tracking-tight text-gray-900 leading-[1.15] mb-1">Form 20</p>
+                  <p class="text-[11px] font-medium text-gray-400 leading-tight">Overall pipeline analytics</p>
                 </div>
               </div>
-              <span class="text-[10px] font-bold text-gray-600 bg-white border border-gray-200 shadow-sm px-3 py-1 rounded-full tracking-wide" id="f20-pct-badge">—</span>
+              <div class="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                <span class="text-[10px] font-bold text-gray-700 bg-gray-50 border border-gray-200 px-3 py-1 rounded-full flex items-center gap-1 shadow-sm shrink-0 whitespace-nowrap">
+                  <span class="material-symbols-outlined" style="font-size:12px;">ballot</span>
+                  <span id="f20-pct-badge">—</span>
+                </span>
+                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 shadow-sm px-3 py-1 rounded-full tracking-wide shrink-0 whitespace-nowrap">Live</span>
+              </div>
             </div>
             
             <div class="px-5 pt-8 pb-7 flex flex-col items-center justify-center border-b border-gray-100/60 bg-gradient-to-b from-white to-gray-50/30 group relative overflow-hidden">
@@ -586,7 +758,7 @@
             <!-- Top remaining changes -->
             <div class="px-4 py-3">
               <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Top remaining changes · Form 20</p>
-              <p class="text-[9px] text-gray-300 mb-2.5">Number = ACs with Form 20 results</p>
+              <p class="text-[9px] text-gray-300 mb-2.5">Least coverage (missing years)</p>
               <div id="f20-state-rows" class="grid grid-cols-4 gap-1.5"></div>
             </div>
           </div>
@@ -594,17 +766,23 @@
           <!-- ── Retro ────────────────────────────────────────────────── -->
           <div class="card card-lift overflow-hidden flex flex-col" id="panel-retro">
 
-            <div class="px-6 pt-5 pb-4 flex items-center justify-between border-b border-gray-100/60 bg-white">
-              <div class="flex items-center gap-3.5">
+            <div class="px-6 pt-5 pb-4 flex flex-wrap items-center justify-between border-b border-gray-100/60 bg-white gap-y-3 gap-x-2">
+              <div class="flex items-center gap-3.5 min-w-0">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-b from-indigo-50 to-indigo-100 flex items-center justify-center shrink-0 border border-indigo-200/50 shadow-sm shadow-indigo-200/50">
                   <span class="material-symbols-outlined text-indigo-600" style="font-size:20px;">history_edu</span>
                 </div>
-                <div>
-                  <p class="text-[14.5px] font-bold tracking-tight text-gray-900 leading-none mb-1">Retro DB</p>
-                  <p class="text-[11px] font-medium text-gray-400">Historical election vault</p>
+                <div class="min-w-0">
+                  <p class="text-[14.5px] font-bold tracking-tight text-gray-900 leading-[1.15] mb-1">Retro DB</p>
+                  <p class="text-[11px] font-medium text-gray-400 leading-tight">Historical election vault</p>
                 </div>
               </div>
-              <span class="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 shadow-sm px-3 py-1 rounded-full tracking-wide">Live</span>
+              <div class="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full flex items-center gap-1 shadow-sm shrink-0 whitespace-nowrap">
+                  <span class="material-symbols-outlined" style="font-size:12px;">history</span>
+                  <span id="retro-pct-badge">—</span>
+                </span>
+                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 shadow-sm px-3 py-1 rounded-full tracking-wide shrink-0 whitespace-nowrap">Live</span>
+              </div>
             </div>
 
             <div class="px-5 pt-8 pb-7 flex flex-col items-center justify-center border-b border-gray-100/60 bg-gradient-to-b from-white to-indigo-50/20 group relative overflow-hidden">
@@ -654,22 +832,22 @@
           <!-- ══ Caste Data — full-width analytical showcase ══ -->
           <div class="card card-lift overflow-hidden flex flex-col" id="panel-caste">
 
-            <div class="px-6 pt-5 pb-4 flex items-center justify-between border-b border-gray-100/60 bg-white">
-              <div class="flex items-center gap-3.5">
+            <div class="px-6 pt-5 pb-4 flex flex-wrap items-center justify-between border-b border-gray-100/60 bg-white gap-y-3 gap-x-2">
+              <div class="flex items-center gap-3.5 min-w-0">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 border border-orange-200/50 shadow-sm shadow-orange-500/20">
                   <span class="material-symbols-outlined text-white" style="font-size:20px;">diversity_3</span>
                 </div>
-                <div>
-                  <p class="text-[14.5px] font-bold tracking-tight text-gray-900 leading-none mb-1">Caste Demographics</p>
-                  <p class="text-[11px] font-medium text-gray-400">Coverage across <span id="caste-sub-states">—</span> states</p>
+                <div class="min-w-0">
+                  <p class="text-[14.5px] font-bold tracking-tight text-gray-900 leading-[1.15] mb-1">Caste Demographics</p>
+                  <p class="text-[11px] font-medium text-gray-400 leading-tight">Coverage across <span id="caste-sub-states">—</span> states</p>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <span class="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-3 py-1 rounded-full flex items-center gap-1 shadow-sm">
+              <div class="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                <span class="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-3 py-1 rounded-full flex items-center gap-1 shadow-sm shrink-0 whitespace-nowrap">
                   <span class="material-symbols-outlined" style="font-size:12px;">map</span>
                   <span id="caste-pct">—</span>
                 </span>
-                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 shadow-sm px-3 py-1 rounded-full tracking-wide">Live</span>
+                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 shadow-sm px-3 py-1 rounded-full tracking-wide shrink-0 whitespace-nowrap">Live</span>
               </div>
             </div>
 
@@ -713,22 +891,22 @@
           <!-- ══ Booth Details — full-width analytical showcase ══ -->
           <div class="card card-lift overflow-hidden flex flex-col" id="panel-booth">
 
-            <div class="px-6 pt-5 pb-4 flex items-center justify-between border-b border-gray-100/60 bg-white">
-              <div class="flex items-center gap-3.5">
+            <div class="px-6 pt-5 pb-4 flex flex-wrap items-center justify-between border-b border-gray-100/60 bg-white gap-y-3 gap-x-2">
+              <div class="flex items-center gap-3.5 min-w-0">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shrink-0 border border-emerald-200/50 shadow-sm shadow-emerald-500/20">
                   <span class="material-symbols-outlined text-white" style="font-size:20px;">how_to_vote</span>
                 </div>
-                <div>
-                  <p class="text-[14.5px] font-bold tracking-tight text-gray-900 leading-none mb-1">Booth Details</p>
-                  <p class="text-[11px] font-medium text-gray-400">Coverage across <span id="booth-sub-states">—</span> states</p>
+                <div class="min-w-0">
+                  <p class="text-[14.5px] font-bold tracking-tight text-gray-900 leading-[1.15] mb-1">Booth Details</p>
+                  <p class="text-[11px] font-medium text-gray-400 leading-tight">Coverage across <span id="booth-sub-states">—</span> states</p>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-3 py-1 rounded-full flex items-center gap-1 shadow-sm">
+              <div class="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                <span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-3 py-1 rounded-full flex items-center gap-1 shadow-sm shrink-0 whitespace-nowrap">
                   <span class="material-symbols-outlined" style="font-size:12px;">map</span>
                   <span id="booth-pct">—</span>
                 </span>
-                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 shadow-sm px-3 py-1 rounded-full tracking-wide">Live</span>
+                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 shadow-sm px-3 py-1 rounded-full tracking-wide shrink-0 whitespace-nowrap">Live</span>
               </div>
             </div>
 
@@ -760,11 +938,20 @@
               </div>
             </div>
 
-<!-- Top remaining changes -->
-            <div class="px-4 py-3">
+            <!-- Top remaining changes -->
+            <div class="px-4 py-3 border-b border-gray-50">
               <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Top remaining changes · AC-wise Coverage</p>
               <p class="text-[9px] text-gray-300 mb-2.5">Number = ACs with data · % = coverage of expected</p>
               <div id="booth-state-rows" class="grid grid-cols-4 gap-1.5"></div>
+            </div>
+
+            <!-- Deep Drilldown CTA to State Glance Report -->
+            <div class="p-3 bg-emerald-50/40 mt-auto">
+              <a href="/state-glance-report" class="w-full flex items-center justify-center gap-2 py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-lg text-xs font-bold shadow-sm hover:shadow transition-all duration-150">
+                <span class="material-symbols-outlined text-[15px]">analytics</span>
+                <span>Open Booth &amp; Voter Analytics</span>
+                <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+              </a>
             </div>
           </div>
 
@@ -786,11 +973,11 @@
       <div class="bg-white border-b border-gray-200 px-5 sticky top-0 z-10 shrink-0">
 
         <!-- Row 1: title + table week selector -->
-        <div class="h-[48px] flex items-center justify-between">
+        <div class="py-2 min-h-[48px] flex flex-wrap items-center justify-between gap-y-2">
           <div class="flex items-center gap-2.5">
             <span class="material-symbols-outlined text-gray-400" style="font-size:15px;">fact_check</span>
             <h2 class="text-[13px] font-semibold text-gray-900">Weekly Report</h2>
-            <span class="text-[11px] font-semibold bg-indigo-50 text-indigo-600 px-2.5 py-0.5 rounded-full tabular-nums" id="glance-panel-count">— records</span>
+            <span class="text-[11px] font-semibold bg-indigo-50 text-indigo-600 px-2.5 py-0.5 rounded-full tabular-nums whitespace-nowrap" id="glance-panel-count">— records</span>
           </div>
 
           <!-- Table week selector (replaces old gradient button) -->
@@ -809,7 +996,7 @@
         </div>
 
         <!-- Row 2: Graph range filter bar -->
-        <div class="pb-2.5 flex items-center gap-2">
+        <div class="pb-2.5 flex flex-wrap items-center gap-2">
           <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">Graph</span>
 
           <!-- Hidden values passed to API -->
@@ -818,7 +1005,7 @@
           <input type="hidden" id="glance-to-week"   value="">
 
           <!-- Preset pills -->
-          <div class="flex gap-1">
+          <div class="flex flex-wrap gap-1">
             <button onclick="setGlanceGraphRange('4')"   id="grange-4"   class="grange-btn grange-active">Last 4 Weeks</button>
             <button onclick="setGlanceGraphRange('8')"   id="grange-8"   class="grange-btn">Last 8 Weeks</button>
             <button onclick="setGlanceGraphRange('12')"  id="grange-12"  class="grange-btn">Last 12 Weeks</button>
@@ -858,7 +1045,7 @@
       <div class="px-5 pt-5 shrink-0 flex flex-col gap-3">
 
         <!-- Row 1 · Aggregate across Form 20 + Retro + Booth + Caste -->
-        <div class="grid grid-cols-4 gap-3">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
 
           <!-- Total Pushed (aggregate ACs) -->
           <div class="card p-4">
@@ -905,7 +1092,7 @@
         </div>
 
         <!-- Row 2 · Per-dataset (live working figures) -->
-        <div class="grid grid-cols-4 gap-3">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
 
           <!-- Form 20 · pushed this week -->
           <div class="card p-4 border-l-2 border-l-gray-900">
@@ -956,10 +1143,10 @@
           <span class="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></span>
           <p class="text-[10.5px] font-bold text-gray-500 uppercase tracking-widest">Category 1 — Form 20 &amp; Retro &nbsp;·&nbsp; Election Type · Year · State</p>
         </div>
-        <div class="grid grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
           <!-- Pipeline Momentum C1 -->
-          <div class="col-span-3 card p-4">
+          <div class="lg:col-span-3 card p-4">
             <div class="flex items-center justify-between mb-1">
               <p class="text-[12.5px] font-semibold text-gray-900">Pipeline Momentum <span class="text-gray-400 font-normal">(4 Week Trend)</span></p>
               <div class="flex items-center gap-3 text-[10px] text-gray-500">
@@ -972,7 +1159,7 @@
           </div>
 
           <!-- State-Wise Push Volume C1 -->
-          <div class="col-span-2 card overflow-hidden flex flex-col">
+          <div class="lg:col-span-2 card overflow-hidden flex flex-col">
             <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
               <p class="text-[12.5px] font-semibold text-gray-900">State-Wise Push Volume</p>
               <span class="text-[9.5px] text-gray-400">this week · pushed</span>
@@ -1002,10 +1189,10 @@
           <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
           <p class="text-[10.5px] font-bold text-gray-500 uppercase tracking-widest">Category 2 — Booth &amp; Caste &nbsp;·&nbsp; State Progress</p>
         </div>
-        <div class="grid grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
           <!-- Pipeline Momentum C2 -->
-          <div class="col-span-3 card p-4">
+          <div class="lg:col-span-3 card p-4">
             <div class="flex items-center justify-between mb-1">
               <p class="text-[12.5px] font-semibold text-gray-900">Pipeline Momentum <span class="text-gray-400 font-normal">(4 Week Trend)</span></p>
               <div class="flex items-center gap-3 text-[10px] text-gray-500">
@@ -1018,7 +1205,7 @@
           </div>
 
           <!-- State-Wise Push Volume C2 -->
-          <div class="col-span-2 card overflow-hidden flex flex-col">
+          <div class="lg:col-span-2 card overflow-hidden flex flex-col">
             <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
               <p class="text-[12.5px] font-semibold text-gray-900">State-Wise Push Volume</p>
               <span class="text-[9.5px] text-gray-400">this week · pushed</span>
@@ -1216,6 +1403,6 @@
 <div id="toast" class="fixed bottom-5 right-5 bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-lg text-[12.5px] font-medium transition-all duration-300 opacity-0 pointer-events-none translate-y-2 z-[200] flex items-center gap-2 max-w-xs">
 </div>
 
-<script src="/static/app.js?v=20260813d"></script>
+<script src="/static/app.js?v=20260928"></script>
 </body>
 </html>
